@@ -1,0 +1,65 @@
+#!/bin/bash
+# Скрипт для применения миграций PostgreSQL
+# Использование:
+#   ./migrations/apply.sh [номер_миграции]
+#   или
+#   bash migrations/apply.sh [номер_миграции]
+
+set -e
+
+# Параметры подключения (можно переопределить через переменные окружения)
+PGHOST="${PGHOST:-localhost}"
+PGPORT="${PGPORT:-5432}"
+PGUSER="${PGUSER:-speq_user}"
+PGDATABASE="${PGDATABASE:-speq}"
+
+# Если указан PGPASSWORD, используем его, иначе будет запрошен интерактивно
+if [ -n "$PGPASSWORD" ]; then
+  export PGPASSWORD
+  PASSWORD_ARG=""
+else
+  PASSWORD_ARG="-W"
+fi
+
+# Функция для применения миграции
+apply_migration() {
+  local migration_file=$1
+  if [ ! -f "$migration_file" ]; then
+    echo "❌ Файл миграции не найден: $migration_file"
+    exit 1
+  fi
+  
+  echo "📄 Применение миграции: $migration_file"
+  psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" $PASSWORD_ARG -f "$migration_file"
+  
+  if [ $? -eq 0 ]; then
+    echo "✅ Миграция применена успешно"
+  else
+    echo "❌ Ошибка при применении миграции"
+    exit 1
+  fi
+}
+
+# Если указан номер миграции, применяем только её
+if [ -n "$1" ]; then
+  migration_file="migrations/00$1_*.sql"
+  if ls $migration_file 1> /dev/null 2>&1; then
+    apply_migration $(ls $migration_file | head -1)
+  else
+    echo "❌ Миграция $1 не найдена"
+    exit 1
+  fi
+else
+  # Применяем все миграции по порядку
+  echo "🔄 Применение всех миграций..."
+  
+  for migration in migrations/00*.sql; do
+    if [ -f "$migration" ]; then
+      apply_migration "$migration"
+      echo ""
+    fi
+  done
+  
+  echo "✅ Все миграции применены"
+fi
+
