@@ -9,6 +9,7 @@ import { LLMProviderFactory } from "../llm";
 import { QuestionParser } from "../llm/question.parser";
 import { AnswerGenerator } from "../llm/answer.generator";
 import { checkDatabaseHealth } from "../db/pg";
+import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
 
 async function main() {
   const llmFactory = new LLMProviderFactory();
@@ -64,24 +65,78 @@ async function main() {
     console.log(`Доступные LLM провайдеры: ${availableProviders.join(", ")}`);
     console.log(`Используется: chat=${process.env.LLM_CHAT_PROVIDER ?? "ollama"}, embeddings=${process.env.LLM_EMBEDDINGS_PROVIDER ?? "ollama"}\n`);
 
-    const userText = await ask(
+    console.log("Режим: диалог уточнений. Команды: /done — закончить и построить JSON, /exit — выход.\n");
+
+    let userText = await ask(
       "Введите запрос (RU), например: Нужен гусеничный экскаватор для карьера до 25 тонн\n> ",
     );
-    rl.close();
 
     if (!userText.trim()) {
+      rl.close();
       console.error("Пустой запрос, завершение.");
       process.exit(1);
     }
 
     console.log("\n[1/4] Парсинг запроса через LLM...");
     let searchQuery;
+
+    // Диалоговый режим: LLM может задать уточняющие вопросы.
+    // Если пользователь не отвечает или хочет выйти — завершаем.
+    const model = process.env.LLM_MODEL ?? "qwen2.5:7b-instruct-q4_K_M";
+    const maxTurns = process.env.LLM_DIALOG_MAX_TURNS ? Number(process.env.LLM_DIALOG_MAX_TURNS) : 6;
+    const builder = new InteractiveQueryBuilder(llmFactory, { model, maxTurns });
+
     try {
-      searchQuery = await questionParser.parse(userText);
+      // Первый шаг — с исходного запроса.
+      // Если LLM сразу вернёт final — отлично.
+      // Если ask — продолжаем спрашивать пользователя.
+      // /done: просим best-effort финал.
+      // /exit: выходим.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const trimmed = userText.trim();
+        if (trimmed === "/exit") {
+          rl.close();
+          console.log("Выход по команде /exit.");
+          process.exit(0);
+        }
+        if (trimmed === "/done") {
+          const step = await builder.next("Пользователь хочет завершить (/done). Построй best-effort final SearchQuery.");
+          if (step.action !== "final") {
+            // Подстраховка: если модель всё равно спрашивает — принудительно финализируем через старый парсер.
+            searchQuery = await questionParser.parse("Построй best-effort SearchQuery по текущему диалогу.");
+          } else {
+            searchQuery = step.query;
+          }
+          break;
+        }
+
+        const step = await builder.next(userText);
+        if (step.action === "final") {
+          searchQuery = step.query;
+          break;
+        }
+
+        console.log(`\nУточнение: ${step.question}`);
+        userText = await ask("> ");
+        if (!userText.trim()) {
+          rl.close();
+          console.error("Пустой ответ. Для выхода используйте /exit, для завершения — /done.");
+          process.exit(1);
+        }
+      }
     } catch (err) {
-      console.error("Ошибка парсинга запроса LLM. Убедитесь, что хотя бы один провайдер доступен.");
-      console.error(String(err));
-      process.exit(1);
+      // Фоллбек на старый одношаговый парсер (без уточнений)
+      try {
+        searchQuery = await questionParser.parse(userText);
+      } catch {
+        rl.close();
+        console.error("Ошибка парсинга запроса LLM. Убедитесь, что хотя бы один провайдер доступен.");
+        console.error(String(err));
+        process.exit(1);
+      }
+    } finally {
+      rl.close();
     }
 
     console.log("Структурированный запрос (SearchQuery):");

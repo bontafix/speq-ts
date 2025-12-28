@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "dotenv": "^17.2.3",
+    "groq-sdk": "^0.3.3",
     "pg": "^8.16.3"
   }
 }
