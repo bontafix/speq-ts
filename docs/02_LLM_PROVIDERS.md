@@ -68,6 +68,7 @@ ollama pull nomic-embed-text
 LLM_CHAT_PROVIDER=groq
 GROQ_API_KEY=gsk_xxxxxxxxxxxxx
 LLM_MODEL=llama-3.3-70b-versatile
+GROQ_BASE_URL=https://api.groq.com
 
 # Для embeddings используйте Ollama
 LLM_EMBEDDINGS_PROVIDER=ollama
