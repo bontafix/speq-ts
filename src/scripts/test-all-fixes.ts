@@ -4,6 +4,7 @@
  * Запуск: npx tsx src/scripts/test-all-fixes.ts
  */
 
+import "dotenv/config";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
 import type { SearchQuery } from "../catalog";
@@ -63,7 +64,7 @@ async function runTests() {
   const validateEmbedding = repo['validateEmbedding'].bind(repo);
 
   const validEmbedding = new Array(768).fill(0.5);
-  const invalidEmbeddings = [
+  const invalidEmbeddings: Array<{ emb: unknown; desc: string }> = [
     { emb: new Array(100).fill(0.5), desc: "Неправильная размерность (100)" },
     { emb: new Array(768).fill(NaN), desc: "NaN значения" },
     { emb: new Array(768).fill(Infinity), desc: "Infinity значения" },
@@ -73,7 +74,9 @@ async function runTests() {
   reportTest("Валидный embedding (768 чисел)", validateEmbedding(validEmbedding, 768));
 
   for (const test of invalidEmbeddings) {
-    const result = validateEmbedding(test.emb, 768);
+    // validateEmbedding — внутренний метод репозитория (типизирован как number[]),
+    // но тут мы намеренно подаем некорректные значения, поэтому приводим тип.
+    const result = validateEmbedding(test.emb as any, 768);
     reportTest(test.desc, result === false, result ? "Должен был быть отклонен" : undefined);
   }
 

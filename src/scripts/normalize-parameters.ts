@@ -12,23 +12,39 @@ interface EquipmentRecord {
 }
 
 /**
- * Находит записи без normalized_parameters или с устаревшими
+ * Находит записи для нормализации.
+ *
+ * Режимы:
+ * - missing (по умолчанию): только где normalized_parameters отсутствует или пустой объект
+ * - merge: пересчитать и MERGE-нуть в существующий normalized_parameters
+ * - force: пересчитать и ПЕРЕЗАПИСАТЬ normalized_parameters
  */
-async function findRecordsToNormalize(limit?: number): Promise<EquipmentRecord[]> {
+async function findRecordsToNormalize(
+  mode: "missing" | "merge" | "force",
+  limit?: number
+): Promise<EquipmentRecord[]> {
   const limitClause = limit ? `LIMIT ${limit}` : "";
+
+  const whereMode =
+    mode === "missing"
+      ? `
+        AND (
+          normalized_parameters IS NULL
+          OR normalized_parameters = '{}'::jsonb
+        )
+      `
+      : "";
 
   const sql = `
     SELECT 
       id::text AS id,
-      main_parameters
+      main_parameters,
+      normalized_parameters
     FROM equipment
     WHERE is_active = true
       AND main_parameters IS NOT NULL
       AND main_parameters != '{}'::jsonb
-      AND (
-        normalized_parameters IS NULL
-        OR normalized_parameters = '{}'::jsonb
-      )
+      ${whereMode}
     ORDER BY id
     ${limitClause}
   `;
@@ -64,7 +80,14 @@ async function main() {
     ? parseInt(process.env.NORMALIZE_BATCH_SIZE, 10)
     : undefined;
 
+  const modeEnv = (process.env.NORMALIZE_MODE || "missing").toLowerCase();
+  const mode: "missing" | "merge" | "force" =
+    modeEnv === "merge" || modeEnv === "force" ? modeEnv : "missing";
+
   console.log("Нормализация параметров оборудования...\n");
+  console.log(`Режим: ${mode}`);
+  if (limit) console.log(`Лимит: ${limit}`);
+  console.log();
 
   // Загружаем справочник
   console.log("Загрузка справочника параметров...");
@@ -83,7 +106,7 @@ async function main() {
 
   // Находим записи для нормализации
   console.log("Поиск записей для нормализации...");
-  const records = await findRecordsToNormalize(limit);
+  const records = await findRecordsToNormalize(mode, limit);
   console.log(`Найдено ${records.length} записей для нормализации\n`);
 
   if (records.length === 0) {
@@ -113,7 +136,11 @@ async function main() {
       const result = normalizer.normalize(record.main_parameters || {});
 
       // Сохраняем результат
-      await saveNormalizedParameters(record.id, result.normalized);
+      const normalizedToSave =
+        mode === "merge"
+          ? { ...(record.normalized_parameters || {}), ...result.normalized }
+          : result.normalized;
+      await saveNormalizedParameters(record.id, normalizedToSave);
 
       const normalizedCount = Object.keys(result.normalized).length;
       const unresolvedCount = Object.keys(result.unresolved).length;
@@ -147,7 +174,7 @@ async function main() {
   }
 
   // Статистика по оставшимся записям
-  const remaining = await findRecordsToNormalize(1);
+  const remaining = await findRecordsToNormalize(mode, 1);
   if (remaining.length > 0) {
     console.log(`\nОсталось записей для нормализации: ${remaining.length > 0 ? "много" : "0"}`);
     if (!limit) {

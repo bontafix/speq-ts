@@ -1,4 +1,4 @@
-import { SearchQuery, CatalogSearchResult, EquipmentSummary } from "../catalog";
+import { SearchQuery, CatalogSearchResult, EquipmentSummary, CatalogSuggestions, CatalogIndexService } from "../catalog";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { QueryParameterNormalizer } from "../normalization/query-parameter-normalizer";
 import { ParameterDictionaryService } from "../normalization/parameter-dictionary.service";
@@ -9,6 +9,7 @@ export class SearchEngine {
   private queryNormalizer: QueryParameterNormalizer | null = null;
   private config: ConfigService;
   private dictionaryInitialized = false;
+  private catalogIndex: CatalogIndexService;
 
   constructor(
     private readonly equipmentRepository: EquipmentRepository,
@@ -16,12 +17,21 @@ export class SearchEngine {
     private readonly llmFactory?: LLMProviderFactory
   ) {
     this.config = new ConfigService();
+    this.catalogIndex = new CatalogIndexService();
+    
     // Инициализируем нормализатор, если передан словарь
     if (this.dictionaryService) {
       this.queryNormalizer = new QueryParameterNormalizer(this.dictionaryService);
       // Загружаем словарь асинхронно (не блокируем конструктор)
       this.initializeDictionary();
     }
+  }
+
+  /**
+   * Получить индекс каталога (для использования в промптах LLM)
+   */
+  getCatalogIndex(): CatalogIndexService {
+    return this.catalogIndex;
   }
 
   /**
@@ -121,7 +131,12 @@ export class SearchEngine {
       console.warn('[Search] Vector search failed (using FTS only):', vectorResult.reason);
     }
 
-    // 3. Гибридное слияние (RRF)
+    // 3. Если ничего не найдено - пробуем fallback
+    if (ftsResults.length === 0 && vectorResults.length === 0) {
+      return await this.handleNoResults(normalizedQuery, limit);
+    }
+
+    // 4. Гибридное слияние (RRF)
     const merged = this.hybridFusion(ftsResults, vectorResults, limit);
     
     const strategies: string[] = [];
@@ -132,6 +147,79 @@ export class SearchEngine {
       items: merged,
       total: merged.length,
       usedStrategy: strategies.length > 1 ? "mixed" : (strategies[0] as any || "fts"),
+    };
+  }
+
+  /**
+   * Обработка случая, когда ничего не найдено.
+   * Пробует fallback стратегии и предлагает подсказки.
+   */
+  private async handleNoResults(
+    query: SearchQuery, 
+    limit: number
+  ): Promise<CatalogSearchResult> {
+    const suggestions: CatalogSuggestions = {};
+    let message = "Подходящее оборудование не найдено.";
+
+    // FALLBACK 1: Если искали по category, попробовать повторить поиск без category.
+    // Это важно даже когда query.text уже задан:
+    // category в БД матчится по строгому равенству, а LLM часто выдаёт "Кран",
+    // тогда как в БД может быть "Гусеничные краны"/"Автокраны" и т.п.
+    if (query.category) {
+      if (process.env.DEBUG) {
+        console.log(`[Search] No results for category="${query.category}", trying fallback without category...`);
+      }
+      
+      // Убираем category (exactOptionalPropertyTypes требует не использовать undefined)
+      const { category, ...restQuery } = query;
+      const fallbackQuery: SearchQuery = { ...restQuery };
+      
+      try {
+        const fallbackResults = await this.equipmentRepository.fullTextSearch(
+          fallbackQuery, 
+          limit
+        );
+        
+        if (fallbackResults.length > 0) {
+          // Нашли без category — значит category не совпала с тем, что в БД.
+          suggestions.similarCategories = this.catalogIndex.findSimilarCategories(category);
+          
+          return {
+            items: fallbackResults,
+            total: fallbackResults.length,
+            usedStrategy: 'fallback',
+            suggestions,
+            message: `Категория "${category}" не найдена точно. Показаны результаты без фильтра category.`
+          };
+        }
+      } catch (error) {
+        console.error('[Search] Fallback search failed:', error);
+      }
+      
+      // Не нашли даже через text - предлагаем похожие категории
+      suggestions.similarCategories = this.catalogIndex.findSimilarCategories(category, 5);
+      
+      if (suggestions.similarCategories.length > 0) {
+        message = `Категория "${category}" не найдена. Возможно, вы искали: ${suggestions.similarCategories.slice(0, 3).join(', ')}?`;
+      }
+    }
+
+    // FALLBACK 2: Показать популярные категории
+    suggestions.popularCategories = this.catalogIndex.getPopularCategories(10);
+    
+    // FALLBACK 3: Примеры запросов
+    suggestions.exampleQueries = [
+      "Покажи краны",
+      "Найди экскаваторы с мощностью больше 100 л.с.",
+      "Какие есть погрузчики марки Caterpillar",
+    ];
+
+    return {
+      items: [],
+      total: 0,
+      usedStrategy: 'none',
+      suggestions,
+      message,
     };
   }
 

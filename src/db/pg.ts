@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { Pool } from "pg";
 
 // Простой клиент PostgreSQL без ORM.
@@ -7,7 +8,9 @@ export const pgPool = new Pool({
   host: process.env.PGHOST ?? "localhost",
   port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
   user: process.env.PGUSER ?? "postgres",
-  password: process.env.PGPASSWORD ?? "",
+  // pg ругается "client password must be a string", если сюда попадает не строка.
+  // process.env обычно string|undefined, но защищаемся на всякий случай.
+  password: typeof process.env.PGPASSWORD === "string" ? process.env.PGPASSWORD : "",
   database: process.env.PGDATABASE ?? "equipment_catalog",
   
   // Настройки надежности и производительности

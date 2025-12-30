@@ -5,7 +5,8 @@ export interface ParameterDictionary {
   label_ru: string;
   description_ru?: string;
   category: string;
-  param_type: "number" | "enum" | "boolean";
+  // string нужен для грузовых текстовых характеристик (шины/кабина/мосты и т.п.)
+  param_type: "number" | "enum" | "boolean" | "string";
   unit?: string;
   min_value?: number;
   max_value?: number;

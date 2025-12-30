@@ -23,7 +23,7 @@ interface DictionaryEntry {
   label_ru: string;
   description_ru?: string;
   category: string;
-  param_type: "number" | "enum" | "boolean";
+  param_type: "number" | "enum" | "boolean" | "string";
   unit?: string;
   min_value?: number;
   max_value?: number;
