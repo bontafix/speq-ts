@@ -8,12 +8,22 @@ import { SearchEngine } from "../search";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { LLMProviderFactory, type ProviderType } from "../llm";
 import type { SearchQuery } from "../catalog";
+import { ParameterDictionaryService } from "../normalization";
 
 const PORT = process.env.HTTP_PORT ? Number(process.env.HTTP_PORT) : 3000;
 
 const llmFactory = new LLMProviderFactory();
 const repository = new EquipmentRepository();
-const searchEngine = new SearchEngine(repository);
+
+// Инициализируем словарь параметров для нормализации (опционально)
+const dictionaryService = new ParameterDictionaryService();
+// Загружаем словарь асинхронно при старте сервера
+dictionaryService.loadDictionary().catch((error) => {
+  console.warn("Не удалось загрузить словарь параметров. Нормализация параметров отключена.");
+  console.warn(`Ошибка: ${error}`);
+});
+
+const searchEngine = new SearchEngine(repository, dictionaryService);
 const catalogService = new CatalogService(searchEngine);
 
 async function getHealth() {

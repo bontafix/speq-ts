@@ -1,5 +1,6 @@
 import type { LLMProvider, ChatOptions, ChatResponse } from "./providers";
 import { SearchQuery } from "../catalog";
+import { SearchQueryValidator } from "./search-query.validator";
 
 /**
  * Интерфейс для объектов, которые могут выполнять chat completion.
@@ -30,22 +31,37 @@ export class QuestionParser {
 
 Формат SearchQuery (TypeScript):
 {
-  "text"?: string;
-  "category"?: string;
-  "subcategory"?: string;
-  "brand"?: string;
-  "region"?: string;
-  "parameters"?: Record<string, string | number>;
-  "limit"?: number;
+  "text"?: string;           // Текстовый запрос для семантического поиска
+  "category"?: string;        // Категория техники (точное значение)
+  "subcategory"?: string;     // Подкатегория (точное значение)
+  "brand"?: string;           // Бренд/производитель (точное значение)
+  "region"?: string;          // Регион (точное значение)
+  "parameters"?: Record<string, string | number>;  // Технические характеристики
+  "limit"?: number;           // Количество результатов (по умолчанию 10)
 }
 
-Требования:
-- Отвечай ТОЛЬКО валидным JSON без комментариев и пояснений.
-- Не придумывай параметры, которые явно не следуют из запроса.
-- "text" — краткая суть запроса (2-10 слов).
-- "parameters" используй для технических характеристик (масса, тоннаж, объём ковша, мощность и т.п.).
-- Если в запросе есть условия "более", "больше", "от" — используй суффикс "_min" (например, "грузоподъемность_min": 80).
-- Если в запросе есть условия "менее", "меньше", "до" — используй суффикс "_max" (например, "тоннаж_max": 25).
+ВАЖНО! Разница между полями:
+- "text" — для ВЕКТОРНОГО (семантического) поиска. Общее описание: "экскаватор для земляных работ"
+- "category", "brand", "region" — для ТОЧНОЙ фильтрации. Только если явно указано!
+- "parameters" — технические характеристики. Используй РУССКИЕ названия.
+
+Правила parameters:
+- Для "более/больше/от X" → суффикс "_min": {"грузоподъемность_min": 80}
+- Для "менее/меньше/до X" → суффикс "_max": {"тоннаж_max": 25}
+- Для точного значения: {"мощность": 150}
+
+Примеры:
+
+Запрос: "Экскаватор Caterpillar с ковшом от 1 куба"
+Ответ: {"text":"экскаватор","category":"Экскаватор","brand":"Caterpillar","parameters":{"объем_ковша_min":1}}
+
+Запрос: "Краны более 80 тонн в Москве"
+Ответ: {"text":"кран","category":"Кран","region":"Москва","parameters":{"грузоподъемность_min":80}}
+
+Запрос: "Гусеничный бульдозер до 20 тонн"
+Ответ: {"text":"гусеничный бульдозер","category":"Бульдозер","parameters":{"вес_max":20}}
+
+Отвечай ТОЛЬКО валидным JSON без комментариев и пояснений.
 `.trim();
 
     const userPrompt = `
@@ -65,16 +81,23 @@ ${userText}
 
     const raw = response.message.content.trim();
 
+    let parsed: any;
     try {
-      const parsed = JSON.parse(raw);
-      return parsed as SearchQuery;
+      parsed = JSON.parse(raw);
     } catch {
       // На случай, если модель вернула текст с префиксом/суффиксом.
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("Не удалось распарсить ответ LLM как JSON SearchQuery");
       }
-      return JSON.parse(jsonMatch[0]) as SearchQuery;
+      parsed = JSON.parse(jsonMatch[0]);
+    }
+
+    // Валидируем и нормализуем SearchQuery
+    try {
+      return SearchQueryValidator.validate(parsed);
+    } catch (error: any) {
+      throw new Error(`Некорректный SearchQuery от LLM: ${error.message}`);
     }
   }
 }

@@ -9,6 +9,37 @@ export const pgPool = new Pool({
   user: process.env.PGUSER ?? "postgres",
   password: process.env.PGPASSWORD ?? "",
   database: process.env.PGDATABASE ?? "equipment_catalog",
+  
+  // Настройки надежности и производительности
+  max: 20, // Максимальное количество соединений в пуле
+  idleTimeoutMillis: 30000, // Закрывать неактивные соединения через 30 сек
+  connectionTimeoutMillis: 5000, // Таймаут подключения 5 сек
+  query_timeout: 10000, // Таймаут выполнения запроса 10 сек
+});
+
+// Обработка ошибок пула на уровне соединений
+pgPool.on('error', (err, client) => {
+  console.error('❌ Unexpected database pool error:', err.message);
+  console.error('   Connection details:', {
+    host: process.env.PGHOST ?? "localhost",
+    database: process.env.PGDATABASE ?? "equipment_catalog",
+  });
+  // Не завершаем процесс - пул попробует переподключиться
+  // В production здесь можно добавить отправку в систему мониторинга (Sentry, etc.)
+});
+
+// Логирование успешного подключения (опционально, для отладки)
+pgPool.on('connect', (client) => {
+  if (process.env.DEBUG) {
+    console.log('✅ New database connection established');
+  }
+});
+
+// Логирование отключения клиента (опционально, для отладки)
+pgPool.on('remove', (client) => {
+  if (process.env.DEBUG) {
+    console.log('🔌 Database connection removed from pool');
+  }
 });
 
 export type DbIssueLevel = "error" | "warn";

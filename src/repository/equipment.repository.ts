@@ -1,5 +1,6 @@
 import { pgPool } from "../db/pg";
 import type { EquipmentSummary, SearchQuery } from "../catalog";
+import { ParameterNameMapper } from "../normalization/parameter-name-mapper";
 
 /**
  * EquipmentRepository — слой доступа к данным.
@@ -80,6 +81,15 @@ export interface EquipmentForEmbedding {
 
 export class EquipmentRepository {
   /**
+   * Валидация имени параметра для безопасного использования в SQL.
+   * Разрешаем только буквы (латиница + кириллица), цифры и подчеркивания.
+   */
+  private validateParameterKey(key: string): boolean {
+    // Защита от SQL инъекций через имена параметров
+    return /^[a-zA-Zа-яА-ЯёЁ0-9_]+$/.test(key) && key.length > 0 && key.length < 100;
+  }
+
+  /**
    * FTS-поиск по тексту и фильтрам.
    */
   async fullTextSearch(query: SearchQuery, limit: number): Promise<EquipmentSummary[]> {
@@ -115,36 +125,53 @@ export class EquipmentRepository {
     // Обработка параметров из main_parameters (JSONB)
     if (query.parameters && Object.keys(query.parameters).length > 0) {
       for (const [key, value] of Object.entries(query.parameters)) {
-        // Поддержка суффиксов _min и _max для диапазонов
-        if (key.endsWith("_min")) {
-          const paramKey = key.replace("_min", "");
-          const numValue = typeof value === "string" ? parseFloat(value) : Number(value);
-          if (!Number.isNaN(numValue)) {
-            values.push(paramKey, numValue);
-            const keyIndex = values.length - 1;
-            const valueIndex = values.length;
-            whereParts.push(
-              `(main_parameters->>$${keyIndex})::numeric >= $${valueIndex}`,
-            );
+        // Маппинг имени параметра от LLM к имени в БД
+        const mapped = ParameterNameMapper.mapParameterName(key);
+        const paramKey = mapped.dbParamName;
+        
+        // Защита от SQL инъекций: валидируем имя параметра
+        if (!this.validateParameterKey(paramKey)) {
+          console.warn(`[Security] Skipping invalid parameter key: ${paramKey}`);
+          continue;
+        }
+        
+        // Определяем оператор сравнения
+        let operator = '=';
+        let sqlCast = '::text';
+        
+        if (mapped.suffix === '_min' || key.endsWith("_min")) {
+          operator = '>=';
+          sqlCast = '::numeric';
+        } else if (mapped.suffix === '_max' || key.endsWith("_max")) {
+          operator = '<=';
+          sqlCast = '::numeric';
+        }
+        
+        // Конвертируем значение
+        let numValue = typeof value === "string" ? parseFloat(value) : Number(value);
+        
+        if (operator !== '=' && !Number.isNaN(numValue)) {
+          // Конвертируем единицы измерения (например, метры → миллиметры)
+          numValue = ParameterNameMapper.convertValue(paramKey, numValue);
+          
+          const unitInfo = ParameterNameMapper.getUnitInfo(paramKey);
+          if (unitInfo && process.env.DEBUG) {
+            console.log(`[ParamMapper] ${mapped.originalName}: ${value} ${unitInfo.fromUnit} → ${numValue} ${unitInfo.toUnit}`);
           }
-        } else if (key.endsWith("_max")) {
-          const paramKey = key.replace("_max", "");
-          const numValue = typeof value === "string" ? parseFloat(value) : Number(value);
-          if (!Number.isNaN(numValue)) {
-            values.push(paramKey, numValue);
-            const keyIndex = values.length - 1;
-            const valueIndex = values.length;
-            whereParts.push(
-              `(main_parameters->>$${keyIndex})::numeric <= $${valueIndex}`,
-            );
-          }
-        } else {
-          // Точное совпадение (как строка или число)
-          values.push(key, value);
+          
+          values.push(paramKey, numValue);
           const keyIndex = values.length - 1;
           const valueIndex = values.length;
           whereParts.push(
-            `main_parameters->>$${keyIndex} = $${valueIndex}::text`,
+            `(main_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`,
+          );
+        } else if (operator === '=') {
+          // Точное совпадение (как строка)
+          values.push(paramKey, value);
+          const keyIndex = values.length - 1;
+          const valueIndex = values.length;
+          whereParts.push(
+            `main_parameters->>$${keyIndex} = $${valueIndex}${sqlCast}`,
           );
         }
       }
@@ -221,15 +248,126 @@ export class EquipmentRepository {
   }
 
   /**
+   * Валидация embedding вектора перед использованием в SQL.
+   * Проверяет, что это массив чисел правильной размерности.
+   */
+  private validateEmbedding(embedding: number[], expectedDim: number = 768): boolean {
+    // Проверяем, что это массив
+    if (!Array.isArray(embedding)) {
+      return false;
+    }
+    
+    // Проверяем размерность
+    if (embedding.length !== expectedDim) {
+      console.warn(`[Security] Invalid embedding dimension: expected ${expectedDim}, got ${embedding.length}`);
+      return false;
+    }
+    
+    // Проверяем, что все элементы - валидные числа
+    for (let i = 0; i < embedding.length; i++) {
+      if (typeof embedding[i] !== 'number' || !Number.isFinite(embedding[i])) {
+        console.warn(`[Security] Invalid embedding value at index ${i}: ${embedding[i]}`);
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  /**
    * Vector search с генерацией embedding запроса через LLM.
    * Это правильный способ использования векторного поиска.
+   * 
+   * @param queryText - текст запроса
+   * @param queryEmbedding - вектор embedding
+   * @param limit - количество результатов
+   * @param filters - дополнительные фильтры (category, brand, region, parameters)
    */
   async vectorSearchWithEmbedding(
     queryText: string,
     queryEmbedding: number[],
     limit: number,
+    filters?: {
+      category?: string;
+      subcategory?: string;
+      brand?: string;
+      region?: string;
+      parameters?: Record<string, string | number>;
+    }
   ): Promise<EquipmentSummary[]> {
+    // Валидация embedding для защиты от инъекций и некорректных данных
+    if (!this.validateEmbedding(queryEmbedding, 768)) {
+      console.error('[Security] Invalid embedding provided, aborting vector search');
+      return [];
+    }
+    
     const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
+    
+    // Формируем дополнительные WHERE условия
+    const whereParts: string[] = [
+      "embedding IS NOT NULL",
+      "is_active = true"
+    ];
+    const params: any[] = [embeddingLiteral, limit];
+    
+    if (filters?.category && filters.category.trim()) {
+      params.push(filters.category.trim());
+      whereParts.push(`category = $${params.length}`);
+    }
+    
+    if (filters?.subcategory && filters.subcategory.trim()) {
+      params.push(filters.subcategory.trim());
+      whereParts.push(`subcategory = $${params.length}`);
+    }
+    
+    if (filters?.brand && filters.brand.trim()) {
+      params.push(filters.brand.trim());
+      whereParts.push(`brand = $${params.length}`);
+    }
+    
+    if (filters?.region && filters.region.trim()) {
+      params.push(filters.region.trim());
+      whereParts.push(`region = $${params.length}`);
+    }
+    
+    // Обработка параметров (JSONB)
+    if (filters?.parameters && Object.keys(filters.parameters).length > 0) {
+      for (const [key, value] of Object.entries(filters.parameters)) {
+        // Маппинг имени параметра
+        const mapped = ParameterNameMapper.mapParameterName(key);
+        const paramKey = mapped.dbParamName;
+        
+        if (!this.validateParameterKey(paramKey)) continue;
+        
+        let operator = '=';
+        let sqlCast = '::text';
+        
+        if (mapped.suffix === '_min' || key.endsWith("_min")) {
+          operator = '>=';
+          sqlCast = '::numeric';
+        } else if (mapped.suffix === '_max' || key.endsWith("_max")) {
+          operator = '<=';
+          sqlCast = '::numeric';
+        }
+        
+        let numValue = typeof value === "string" ? parseFloat(value) : Number(value);
+        
+        if (operator !== '=' && !Number.isNaN(numValue)) {
+          // Конвертируем единицы измерения
+          numValue = ParameterNameMapper.convertValue(paramKey, numValue);
+          
+          params.push(paramKey, numValue);
+          whereParts.push(
+            `(main_parameters->>$${params.length - 1})${sqlCast} ${operator} $${params.length}`
+          );
+        } else if (operator === '=') {
+          params.push(paramKey, value);
+          whereParts.push(
+            `main_parameters->>$${params.length - 1} = $${params.length}${sqlCast}`
+          );
+        }
+      }
+    }
 
     const sql = `
       SELECT
@@ -241,14 +379,18 @@ export class EquipmentRepository {
         main_parameters AS "mainParameters",
         1 - (embedding <=> $1::vector) AS similarity
       FROM equipment
-      WHERE embedding IS NOT NULL
-        AND is_active = true
+      WHERE ${whereParts.join(" AND ")}
       ORDER BY embedding <=> $1::vector
       LIMIT $2
     `;
 
     try {
-      const result = await pgPool.query(sql, [embeddingLiteral, limit]);
+      if (process.env.DEBUG) {
+        console.log('[VectorSearch] SQL:', sql.replace(/\s+/g, ' ').trim());
+        console.log('[VectorSearch] Params:', params.slice(2).map((p, i) => `$${i+3}=${p}`).join(', '));
+      }
+      
+      const result = await pgPool.query(sql, params);
       return result.rows;
     } catch (err: any) {
       // eslint-disable-next-line no-console
@@ -291,6 +433,11 @@ export class EquipmentRepository {
    * Ожидается, что размер эмбеддинга совпадает с размером vector(N) в БД.
    */
   async updateEmbedding(id: string, embedding: number[]): Promise<void> {
+    // Валидация embedding для защиты от инъекций и некорректных данных
+    if (!this.validateEmbedding(embedding, 768)) {
+      throw new Error(`Invalid embedding for id ${id}: must be array of 768 valid numbers`);
+    }
+    
     const literal = `[${embedding.join(",")}]`;
     // Поддержка как integer id (serial4), так и text id
     const idParam = /^\d+$/.test(id) ? parseInt(id, 10) : id;
