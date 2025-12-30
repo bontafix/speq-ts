@@ -33,28 +33,31 @@ export class UnitParser {
     const lower = str.toLowerCase();
 
     // Масса
-    if (lower.includes("т") || lower.includes("тонн")) return "t";
+    if (lower.includes("тонн") || lower.includes("т")) return "t";
     if (lower.includes("кг") || lower.includes("kg")) return "kg";
     if (lower.includes("г") && !lower.includes("кг")) return "g";
 
     // Мощность
     if (lower.includes("л.с.") || lower.includes("hp") || lower.includes("лс")) return "hp";
-    if (lower.includes("квт") || lower.includes("kw")) return "kw";
-    if (lower.includes("вт") && !lower.includes("квт")) return "w";
+    if (lower.includes("квт") || lower.includes("кw") || lower.includes("kw")) return "kw";
+    if (lower.includes("вт") && !lower.includes("квт") && !lower.includes("kw")) return "w";
 
     // Длина
     if (lower.includes("км") || lower.includes("km")) return "km";
-    if (lower.includes("м") && !lower.includes("мм") && !lower.includes("см")) return "m";
-    if (lower.includes("см") || lower.includes("cm")) return "cm";
     if (lower.includes("мм") || lower.includes("mm")) return "mm";
+    if (lower.includes("см") || lower.includes("cm")) return "cm";
+    if (lower.includes("м") && !lower.includes("мм") && !lower.includes("см")) return "m";
 
     // Объём
-    if (lower.includes("м³") || lower.includes("м3") || lower.includes("m3")) return "m3";
+    if (lower.includes("м³") || lower.includes("м3") || lower.includes("m³") || lower.includes("m3")) return "m3";
     if (lower.includes("л") || lower.includes("литр") || lower.includes("l")) return "l";
 
     // Производительность
-    if (lower.includes("т/ч") || lower.includes("t/h")) return "tph";
-    if (lower.includes("м³/ч") || lower.includes("m3/h")) return "m3h";
+    if (lower.includes("т/ч") || lower.includes("t/h") || lower.includes("tph")) return "tph";
+    if (lower.includes("м³/ч") || lower.includes("m3/h") || lower.includes("m3h")) return "m3h";
+
+    // Скорость
+    if (lower.includes("м/с") || lower.includes("m/s") || lower.includes("mps")) return "mps";
 
     // Частота
     if (lower.includes("гц") || lower.includes("hz")) return "hz";

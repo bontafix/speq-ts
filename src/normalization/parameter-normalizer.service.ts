@@ -44,21 +44,17 @@ export class ParameterNormalizerService {
       if (paramDef.param_type === "number") {
         normalizedValue = this.unitParser.parseValue(rawValue, paramDef.unit || "");
 
-        // Валидация диапазона
-        if (normalizedValue != null) {
+        // Мягкая валидация диапазона (только предупреждение, не отбрасываем значение)
+        if (normalizedValue != null && process.env.DEBUG) {
           if (paramDef.min_value != null && normalizedValue < paramDef.min_value) {
             console.warn(
-              `Значение ${normalizedValue} ниже минимума ${paramDef.min_value} для ${paramDef.key}`
+              `[Normalization] Значение ${normalizedValue} ниже рекомендованного минимума ${paramDef.min_value} для ${paramDef.key} (единица: ${paramDef.unit})`
             );
-            unresolved[rawKey] = rawValue;
-            continue;
           }
           if (paramDef.max_value != null && normalizedValue > paramDef.max_value) {
             console.warn(
-              `Значение ${normalizedValue} выше максимума ${paramDef.max_value} для ${paramDef.key}`
+              `[Normalization] Значение ${normalizedValue} выше рекомендованного максимума ${paramDef.max_value} для ${paramDef.key} (единица: ${paramDef.unit})`
             );
-            unresolved[rawKey] = rawValue;
-            continue;
           }
         }
       } else if (paramDef.param_type === "enum") {
@@ -69,6 +65,19 @@ export class ParameterNormalizerService {
           normalizedValue = true;
         } else if (str === "false" || str === "0" || str === "нет" || str === "no") {
           normalizedValue = false;
+        }
+      } else if (paramDef.param_type === "string") {
+        // Для строковых полей (например, "Шины", "Кабина") сохраняем как есть.
+        // Важно: пустые строки считаем невалидными.
+        if (typeof rawValue === "string") {
+          const s = rawValue.trim();
+          normalizedValue = s.length > 0 ? s : null;
+        } else if (typeof rawValue === "number" || typeof rawValue === "boolean") {
+          normalizedValue = String(rawValue);
+        } else {
+          // объекты/массивы
+          const s = JSON.stringify(rawValue);
+          normalizedValue = s && s !== "{}" && s !== "[]" ? s : null;
         }
       }
 

@@ -1,6 +1,6 @@
 import { pgPool } from "../db/pg";
 import type { EquipmentSummary, SearchQuery } from "../catalog";
-import { ParameterNameMapper } from "../normalization/parameter-name-mapper";
+import { ParameterDictionaryService } from "../normalization/parameter-dictionary.service";
 
 /**
  * EquipmentRepository — слой доступа к данным.
@@ -80,6 +80,12 @@ export interface EquipmentForEmbedding {
 }
 
 export class EquipmentRepository {
+  private dictionaryService: ParameterDictionaryService | undefined;
+
+  constructor(dictionaryService?: ParameterDictionaryService) {
+    this.dictionaryService = dictionaryService;
+  }
+
   /**
    * Валидация имени параметра для безопасного использования в SQL.
    * Разрешаем только буквы (латиница + кириллица), цифры и подчеркивания.
@@ -87,6 +93,70 @@ export class EquipmentRepository {
   private validateParameterKey(key: string): boolean {
     // Защита от SQL инъекций через имена параметров
     return /^[a-zA-Zа-яА-ЯёЁ0-9_]+$/.test(key) && key.length > 0 && key.length < 100;
+  }
+
+  /**
+   * Построение SQL условия для параметра.
+   * 
+   * ВАЖНО: Параметры УЖЕ нормализованы в SearchEngine через QueryParameterNormalizer.
+   * Этот метод только определяет оператор и тип cast на основе суффикса.
+   * 
+   * @returns { paramKey, value, operator, sqlCast }
+   */
+  private buildParameterCondition(
+    key: string,
+    value: string | number
+  ): {
+    paramKey: string;
+    value: number | string;
+    operator: '=' | '>=' | '<=';
+    sqlCast: string;
+  } | null {
+    // Параметры УЖЕ в canonical формате (например, "engine_power_kw_min")
+    // Просто определяем оператор и cast
+    
+    let operator: '=' | '>=' | '<=' = '=';
+    let sqlCast = typeof value === 'number' ? '::numeric' : '::text';
+    let paramKey = key;
+
+    // Определяем оператор из суффикса
+    if (key.endsWith('_min')) {
+      operator = '>=';
+      sqlCast = '::numeric';
+      paramKey = key.slice(0, -4); // Убираем суффикс _min
+    } else if (key.endsWith('_max')) {
+      operator = '<=';
+      sqlCast = '::numeric';
+      paramKey = key.slice(0, -4); // Убираем суффикс _max
+    }
+
+    // Валидация ключа (защита от SQL инъекций)
+    if (!this.validateParameterKey(paramKey)) {
+      console.warn(`[Security] Invalid parameter key: ${paramKey}`);
+      return null;
+    }
+
+    // Пытаемся получить SQL expression из словаря (если доступен)
+    if (this.dictionaryService) {
+      try {
+        const paramDef = this.dictionaryService.findCanonicalKey(paramKey);
+        if (paramDef && paramDef.sql_expression) {
+          // Извлекаем имя поля из sql_expression
+          const fieldName = paramDef.sql_expression.match(/['"]([^'"]+)['"]/)?.[1];
+          if (fieldName) {
+            paramKey = fieldName;
+          }
+        }
+      } catch (error) {
+        // Словарь не загружен - используем paramKey как есть
+      }
+    }
+
+    if (process.env.DEBUG) {
+      console.log(`[Repository] SQL condition: ${paramKey} ${operator} ${value}`);
+    }
+
+    return { paramKey, value, operator, sqlCast };
   }
 
   /**
@@ -106,12 +176,15 @@ export class EquipmentRepository {
     }
 
     if (query.category && query.category.trim()) {
-      values.push(query.category.trim());
-      whereParts.push(`category = $${values.length}`);
+      // Раньше было строгое равенство, но LLM часто возвращает "Кран",
+      // тогда как в БД категория может быть "Краны"/"Автокраны"/"Гусеничные краны".
+      // Делаем мягкий матч по подстроке (case-insensitive).
+      values.push(`%${query.category.trim()}%`);
+      whereParts.push(`category ILIKE $${values.length}`);
     }
     if (query.subcategory && query.subcategory.trim()) {
-      values.push(query.subcategory.trim());
-      whereParts.push(`subcategory = $${values.length}`);
+      values.push(`%${query.subcategory.trim()}%`);
+      whereParts.push(`subcategory ILIKE $${values.length}`);
     }
     if (query.brand && query.brand.trim()) {
       values.push(query.brand.trim());
@@ -125,55 +198,22 @@ export class EquipmentRepository {
     // Обработка параметров из main_parameters (JSONB)
     if (query.parameters && Object.keys(query.parameters).length > 0) {
       for (const [key, value] of Object.entries(query.parameters)) {
-        // Маппинг имени параметра от LLM к имени в БД
-        const mapped = ParameterNameMapper.mapParameterName(key);
-        const paramKey = mapped.dbParamName;
+        // Параметры УЖЕ нормализованы в SearchEngine
+        // Просто строим SQL условие
+        const condition = this.buildParameterCondition(key, value);
+        if (!condition) continue;
         
-        // Защита от SQL инъекций: валидируем имя параметра
-        if (!this.validateParameterKey(paramKey)) {
-          console.warn(`[Security] Skipping invalid parameter key: ${paramKey}`);
-          continue;
-        }
+        const { paramKey, value: conditionValue, operator, sqlCast } = condition;
         
-        // Определяем оператор сравнения
-        let operator = '=';
-        let sqlCast = '::text';
+        // Добавляем условие в WHERE с параметризацией
+      values.push(paramKey, conditionValue);
+        const keyIndex = values.length - 1;
+        const valueIndex = values.length;
         
-        if (mapped.suffix === '_min' || key.endsWith("_min")) {
-          operator = '>=';
-          sqlCast = '::numeric';
-        } else if (mapped.suffix === '_max' || key.endsWith("_max")) {
-          operator = '<=';
-          sqlCast = '::numeric';
-        }
-        
-        // Конвертируем значение
-        let numValue = typeof value === "string" ? parseFloat(value) : Number(value);
-        
-        if (operator !== '=' && !Number.isNaN(numValue)) {
-          // Конвертируем единицы измерения (например, метры → миллиметры)
-          numValue = ParameterNameMapper.convertValue(paramKey, numValue);
-          
-          const unitInfo = ParameterNameMapper.getUnitInfo(paramKey);
-          if (unitInfo && process.env.DEBUG) {
-            console.log(`[ParamMapper] ${mapped.originalName}: ${value} ${unitInfo.fromUnit} → ${numValue} ${unitInfo.toUnit}`);
-          }
-          
-          values.push(paramKey, numValue);
-          const keyIndex = values.length - 1;
-          const valueIndex = values.length;
-          whereParts.push(
-            `(main_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`,
-          );
-        } else if (operator === '=') {
-          // Точное совпадение (как строка)
-          values.push(paramKey, value);
-          const keyIndex = values.length - 1;
-          const valueIndex = values.length;
-          whereParts.push(
-            `main_parameters->>$${keyIndex} = $${valueIndex}${sqlCast}`,
-          );
-        }
+      // Используем normalized_parameters для быстрого поиска по canonical параметрам
+        whereParts.push(
+        `(normalized_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`
+        );
       }
     }
 
@@ -333,39 +373,17 @@ export class EquipmentRepository {
     // Обработка параметров (JSONB)
     if (filters?.parameters && Object.keys(filters.parameters).length > 0) {
       for (const [key, value] of Object.entries(filters.parameters)) {
-        // Маппинг имени параметра
-        const mapped = ParameterNameMapper.mapParameterName(key);
-        const paramKey = mapped.dbParamName;
+        // Параметры УЖЕ нормализованы в SearchEngine
+        const condition = this.buildParameterCondition(key, value);
+        if (!condition) continue;
         
-        if (!this.validateParameterKey(paramKey)) continue;
+        const { paramKey, value: conditionValue, operator, sqlCast } = condition;
         
-        let operator = '=';
-        let sqlCast = '::text';
-        
-        if (mapped.suffix === '_min' || key.endsWith("_min")) {
-          operator = '>=';
-          sqlCast = '::numeric';
-        } else if (mapped.suffix === '_max' || key.endsWith("_max")) {
-          operator = '<=';
-          sqlCast = '::numeric';
-        }
-        
-        let numValue = typeof value === "string" ? parseFloat(value) : Number(value);
-        
-        if (operator !== '=' && !Number.isNaN(numValue)) {
-          // Конвертируем единицы измерения
-          numValue = ParameterNameMapper.convertValue(paramKey, numValue);
-          
-          params.push(paramKey, numValue);
-          whereParts.push(
-            `(main_parameters->>$${params.length - 1})${sqlCast} ${operator} $${params.length}`
-          );
-        } else if (operator === '=') {
-          params.push(paramKey, value);
-          whereParts.push(
-            `main_parameters->>$${params.length - 1} = $${params.length}${sqlCast}`
-          );
-        }
+        params.push(paramKey, conditionValue);
+        // Используем normalized_parameters для быстрого поиска по canonical параметрам
+        whereParts.push(
+          `(normalized_parameters->>$${params.length - 1})${sqlCast} ${operator} $${params.length}`
+        );
       }
     }
 

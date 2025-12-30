@@ -24,7 +24,28 @@ export interface CatalogSearchOptions {
 export interface CatalogSearchResult {
   items: EquipmentSummary[];
   total: number;
-  usedStrategy: "fts" | "vector" | "mixed";
+  usedStrategy: "fts" | "vector" | "mixed" | "fallback" | "none";
+  suggestions?: CatalogSuggestions;
+  message?: string;
+}
+
+export interface CatalogSuggestions {
+  /** Похожие категории (если искали по category) */
+  similarCategories?: string[];
+  
+  /** Популярные категории (топ по количеству) */
+  popularCategories?: CategoryInfo[];
+  
+  /** Доступные бренды (если искали по brand) */
+  availableBrands?: string[];
+  
+  /** Примеры запросов */
+  exampleQueries?: string[];
+}
+
+export interface CategoryInfo {
+  name: string;
+  count: number;
 }
 
 

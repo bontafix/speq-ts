@@ -1,6 +1,17 @@
 /**
  * Маппер имен параметров от LLM к именам в БД.
  * 
+ * ВНИМАНИЕ: Это FALLBACK маппер!
+ * Основная система нормализации находится в:
+ * - ParameterDictionaryService (загрузка справочника из БД)
+ * - QueryParameterNormalizer (нормализация SearchQuery)
+ * - UnitParser (конверсия единиц)
+ * 
+ * Этот маппер используется только когда:
+ * 1. Словарь из БД недоступен
+ * 2. Параметр не найден в словаре
+ * 3. Нужен быстрый маппинг без загрузки БД
+ * 
  * LLM генерирует упрощенные имена ("глубина_копания_max"),
  * а в БД они хранятся с полными названиями и единицами ("Макс. глубина копания, мм.").
  */
@@ -99,11 +110,21 @@ export class ParameterNameMapper {
       || this.PARAMETER_MAP[baseName.toLowerCase()]
       || baseName; // Если не нашли, используем как есть
 
-    return {
+    // Возвращаем объект без undefined в suffix (для exactOptionalPropertyTypes)
+    const result: {
+      dbParamName: string;
+      suffix?: '_min' | '_max';
+      originalName: string;
+    } = {
       dbParamName,
-      suffix,
       originalName,
     };
+    
+    if (suffix !== undefined) {
+      result.suffix = suffix;
+    }
+    
+    return result;
   }
 
   /**

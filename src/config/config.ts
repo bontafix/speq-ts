@@ -2,10 +2,15 @@ import "dotenv/config";
 
 export class ConfigService {
   get llm() {
+    // В проекте чат-провайдер фиксирован: используем только Groq API.
+    // Поэтому дефолтная chat-модель тоже должна быть Groq-совместимой.
+    const defaultGroqChatModel = "llama-3.3-70b-versatile";
     return {
-      model: process.env.LLM_MODEL ?? "qwen2.5:7b-instruct-q4_K_M",
+      model: process.env.LLM_MODEL ?? defaultGroqChatModel,
       embeddingModel: process.env.EMBED_MODEL ?? "nomic-embed-text",
-      chatProvider: process.env.LLM_CHAT_PROVIDER ?? "ollama",
+      // В проекте чат-провайдер фиксирован: используем только Groq API.
+      // Любые попытки переключить chat provider через ENV блокируются в validate().
+      chatProvider: "groq",
       embeddingsProvider: process.env.LLM_EMBEDDINGS_PROVIDER ?? "ollama",
       baseUrl: process.env.LLM_BASE_URL,
       apiKey: process.env.LLM_API_KEY,
@@ -24,29 +29,30 @@ export class ConfigService {
   }
 
   validate(): void {
-    const { chatProvider, apiKey } = this.llm;
+    const { apiKey } = this.llm;
+
+    // Важно: чат-провайдер должен быть только Groq.
+    // Если кто-то выставил LLM_CHAT_PROVIDER, то не даём тихо уйти на Ollama/OpenAI.
+    const envChatProviderRaw = process.env.LLM_CHAT_PROVIDER?.trim();
+    if (envChatProviderRaw && envChatProviderRaw !== "groq") {
+      // Не падаем, чтобы не ломать запуск при старых конфигурациях.
+      // Но явно предупреждаем: переменная будет проигнорирована.
+      console.warn(
+        `⚠️  LLM_CHAT_PROVIDER="${envChatProviderRaw}" будет проигнорирован. В этом проекте для чата используется только Groq API.`,
+      );
+    }
     
-    if (chatProvider === "ollama") {
-      return;
+    // Частая ошибка: оставить LLM_MODEL от Ollama (в формате "model:tag"),
+    // из-за чего Groq возвращает model_not_found.
+    const envModel = process.env.LLM_MODEL?.trim();
+    if (envModel && envModel.includes(":")) {
+      console.warn(
+        `⚠️  LLM_MODEL="${envModel}" выглядит как Ollama-модель (с ":"). Для Groq задайте модель из Groq каталога, например "llama-3.3-70b-versatile".`,
+      );
     }
 
-    if (chatProvider === "groq") {
-      if (!apiKey && !process.env.GROQ_API_KEY) {
-        console.warn("⚠️  Внимание: Вы используете Groq без явного API ключа (LLM_API_KEY или GROQ_API_KEY).");
-      }
-      return;
-    }
-
-    if (chatProvider === "openai") {
-      if (!apiKey && !process.env.OPENAI_API_KEY) {
-        console.warn("⚠️  Внимание: Вы используете OpenAI без явного API ключа (LLM_API_KEY или OPENAI_API_KEY).");
-      }
-      return;
-    }
-
-    // Generic fallback for other providers
-    if (!apiKey) {
-      console.warn(`⚠️  Внимание: Вы используете провайдер ${chatProvider} без явного API ключа (LLM_API_KEY).`);
+    if (!apiKey && !process.env.GROQ_API_KEY) {
+      console.warn("⚠️  Внимание: Вы используете Groq без явного API ключа (LLM_API_KEY или GROQ_API_KEY).");
     }
   }
 }

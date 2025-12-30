@@ -28,6 +28,39 @@ export class ChatController {
     return new Promise((resolve) => this.rl.question(q, resolve));
   }
 
+  /**
+   * Отображение подсказок пользователю
+   */
+  private displaySuggestions(suggestions: import('../catalog').CatalogSuggestions) {
+    console.log('\n📋 Что есть в каталоге:');
+    
+    // Похожие категории (если искали что-то конкретное)
+    if (suggestions.similarCategories && suggestions.similarCategories.length > 0) {
+      console.log('\n   Похожие категории:');
+      suggestions.similarCategories.forEach((cat, i) => {
+        console.log(`   ${i + 1}. ${cat}`);
+      });
+    }
+    
+    // Популярные категории (топ-10)
+    if (suggestions.popularCategories && suggestions.popularCategories.length > 0) {
+      console.log('\n   Популярные категории:');
+      suggestions.popularCategories.slice(0, 10).forEach((cat, i) => {
+        console.log(`   ${i + 1}. ${cat.name} (${cat.count} шт.)`);
+      });
+    }
+    
+    // Примеры запросов
+    if (suggestions.exampleQueries && suggestions.exampleQueries.length > 0) {
+      console.log('\n   Примеры запросов:');
+      suggestions.exampleQueries.forEach(example => {
+        console.log(`   • ${example}`);
+      });
+    }
+    
+    console.log();
+  }
+
   async start() {
     console.log("🤖 Ассистент по подбору оборудования (Speq v2.0)");
     console.log("------------------------------------------------");
@@ -82,16 +115,36 @@ export class ChatController {
             const result = await this.app.catalogService.searchEquipment(step.query);
             
             // 3. Выводим пользователю
-            console.log(`\n✅ Найдено: ${result.total} (Стратегия: ${result.usedStrategy})`);
-            const answerText = this.answerGenerator.generatePlainText(result.items);
-            console.log(answerText);
+            if (result.total === 0) {
+              // Ничего не найдено - показываем подсказки
+              console.log(`\n❌ Ничего не найдено`);
+              
+              if (result.message) {
+                console.log(`\n💡 ${result.message}`);
+              }
+              
+              // Показываем доступные категории
+              if (result.suggestions) {
+                this.displaySuggestions(result.suggestions);
+              }
+            } else {
+              // Нашли результаты
+              console.log(`\n✅ Найдено: ${result.total} (Стратегия: ${result.usedStrategy})`);
+              
+              if (result.message) {
+                console.log(`💡 ${result.message}`);
+              }
+              
+              const answerText = this.answerGenerator.generatePlainText(result.items);
+              console.log(answerText);
 
-            // 4. Обогащаем контекст LLM результатами для продолжения диалога
-            const summary = result.items.slice(0, 5)
-              .map(i => `- ${i.name} (Price: ${i.price}, Brand: ${i.brand}, Params: ${JSON.stringify(i.mainParameters)})`)
-              .join("\n");
-            
-            this.builder.addSearchResults(result.total, summary);
+              // 4. Обогащаем контекст LLM результатами для продолжения диалога
+              const summary = result.items.slice(0, 5)
+                .map(i => `- ${i.name} (Price: ${i.price}, Brand: ${i.brand}, Params: ${JSON.stringify(i.mainParameters)})`)
+                .join("\n");
+              
+              this.builder.addSearchResults(result.total, summary);
+            }
             
             prompt = "\nЧто-то еще? (или уточните критерии): ";
           }

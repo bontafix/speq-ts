@@ -4,6 +4,7 @@
  * Запуск: npx tsx src/scripts/test-security-fixes.ts
  */
 
+import "dotenv/config";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import type { SearchQuery } from "../catalog";
 import { pgPool } from "../db/pg";
@@ -92,7 +93,11 @@ try {
   };
   
   // Выполняем запрос (он не должен упасть)
-  await repo.fullTextSearch(maliciousQueries[0], 10);
+  const first = maliciousQueries[0];
+  if (!first) {
+    throw new Error("maliciousQueries[0] отсутствует");
+  }
+  await repo.fullTextSearch(first, 10);
   
   console.warn = originalWarn;
   

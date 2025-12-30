@@ -287,7 +287,22 @@ const server = http.createServer(async (req, res) => {
         const { chatProvider, embeddingsProvider } = data;
 
         if (chatProvider) {
-          llmFactory.setChatProvider(chatProvider as ProviderType);
+          // Важно: в этом проекте чат-провайдер фиксирован и не переключается.
+          if (String(chatProvider).trim() !== "groq") {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(
+              JSON.stringify(
+                {
+                  error: 'Смена chatProvider запрещена. Разрешён только "groq".',
+                },
+                null,
+                2,
+              ),
+            );
+            return;
+          }
+          llmFactory.setChatProvider("groq");
         }
         if (embeddingsProvider) {
           llmFactory.setEmbeddingsProvider(embeddingsProvider as ProviderType);

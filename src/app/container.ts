@@ -17,8 +17,9 @@ export class AppContainer {
     this.config = new ConfigService();
     this.config.validate();
 
-    this.repository = new EquipmentRepository();
+    // Инициализация в правильном порядке
     this.dictionaryService = new ParameterDictionaryService();
+    this.repository = new EquipmentRepository(this.dictionaryService); // Передаем словарь
     this.llmFactory = new LLMProviderFactory();
     
     // Inject llmFactory into SearchEngine for vector generation
