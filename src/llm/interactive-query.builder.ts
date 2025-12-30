@@ -1,5 +1,6 @@
 import type { ChatMessage, LLMProvider, ChatOptions } from "./providers";
 import type { SearchQuery } from "../catalog";
+import { SearchQueryValidator } from "./search-query.validator";
 
 /**
  * Диалоговый билдер SearchQuery.
@@ -41,7 +42,14 @@ function parseStepJson(raw: string): InteractiveQueryStep {
     if (!query || typeof query !== "object") {
       throw new Error("LLM вернул action=final, но query отсутствует или не объект");
     }
-    return { action: "final", query: query as SearchQuery };
+    
+    // Валидируем и нормализуем SearchQuery от LLM
+    try {
+      const validatedQuery = SearchQueryValidator.validate(query);
+      return { action: "final", query: validatedQuery };
+    } catch (error: any) {
+      throw new Error(`Некорректный SearchQuery от LLM: ${error.message}`);
+    }
   }
 
   throw new Error(`Неизвестный action от LLM: ${String(action)}`);
@@ -55,6 +63,7 @@ export interface InteractiveQueryBuilderOptions {
 export class InteractiveQueryBuilder {
   private readonly messages: ChatMessage[];
   private turns = 0;
+  private readonly MAX_CONTEXT_MESSAGES = 20; // Макс. сообщений в истории (кроме system)
 
   constructor(
     private readonly provider: Pick<LLMProvider, "chat">,
@@ -76,25 +85,77 @@ export class InteractiveQueryBuilder {
 2) {"action":"final","query":{...}}
    Используй, когда достаточно данных. query должен соответствовать SearchQuery:
    {
-     "text"?: string;
-     "category"?: string;
-     "subcategory"?: string;
-     "brand"?: string;
-     "region"?: string;
-     "parameters"?: Record<string, string | number>;
-     "limit"?: number;
+     "text"?: string;           // Текстовый запрос для семантического поиска
+     "category"?: string;        // Категория техники (точное значение)
+     "subcategory"?: string;     // Подкатегория (точное значение)
+     "brand"?: string;           // Бренд/производитель (точное значение)
+     "region"?: string;          // Регион (точное значение)
+     "parameters"?: Record<string, string | number>;  // Технические характеристики
+     "limit"?: number;           // Количество результатов (по умолчанию 10)
    }
 
-Правила:
-- Не придумывай параметры, которые явно не следуют из диалога.
-- "text" — краткая суть запроса (2-10 слов).
-- "parameters" используй для тех. характеристик (масса, тоннаж, объём ковша, мощность и т.п.).
-- Если есть условия "более/больше/от" — суффикс "_min" (например "грузоподъемность_min": 80).
-- Если есть условия "менее/меньше/до" — суффикс "_max" (например "тоннаж_max": 25).
-- Если пользователь говорит, что хочет завершить (например /done), не задавай вопросы — верни best-effort final.
+ВАЖНО! Разница между полями:
+- "text" — используется для ВЕКТОРНОГО (семантического) поиска. Сюда помещай общее описание запроса.
+  Пример: "экскаватор для земляных работ", "гусеничный кран", "погрузчик фронтальный"
+  
+- "category", "subcategory", "brand", "region" — используются для ТОЧНОЙ фильтрации в БД.
+  Помещай сюда ТОЛЬКО если пользователь явно указал категорию/бренд.
+  Примеры категорий: "Экскаватор", "Кран", "Погрузчик", "Бульдозер", "Спецтехника"
+  Примеры брендов: "Caterpillar", "Komatsu", "Hitachi", "JCB", "Volvo"
+  
+- "parameters" — технические характеристики для фильтрации (JSONB поле в БД).
+  Используй РУССКИЕ названия параметров: "грузоподъемность", "мощность", "вес", "объем_ковша" и т.д.
+
+Правила формирования parameters:
+- Для диапазонов "более/больше/от X" используй суффикс "_min": {"грузоподъемность_min": 80}
+- Для диапазонов "менее/меньше/до X" используй суффикс "_max": {"тоннаж_max": 25}
+- Для точного значения: {"мощность": 150}
+- Извлекай только те параметры, которые ЯВНО указал пользователь
+
+Примеры хороших SearchQuery:
+
+Запрос: "Нужен экскаватор Caterpillar с ковшом от 1 кубометра"
+Ответ: {"action":"final","query":{"text":"экскаватор","category":"Экскаватор","brand":"Caterpillar","parameters":{"объем_ковша_min":1}}}
+
+Запрос: "Покажи краны грузоподъемностью более 80 тонн в Москве"
+Ответ: {"action":"final","query":{"text":"кран","category":"Кран","region":"Москва","parameters":{"грузоподъемность_min":80}}}
+
+Запрос: "Ищу технику для стройки"
+Ответ: {"action":"ask","question":"Какой именно тип техники вас интересует? Например: экскаватор, кран, бульдозер, погрузчик?"}
+
+Запрос: "Гусеничный бульдозер весом до 20 тонн"
+Ответ: {"action":"final","query":{"text":"гусеничный бульдозер","category":"Бульдозер","parameters":{"вес_max":20}}}
+
+ВАЖНО:
+- Не придумывай значения категорий/брендов — используй ТОЛЬКО если пользователь явно указал
+- Если пользователь указал "/done" или "хватит" — верни best-effort final
+- Задавай уточняющие вопросы только если информации явно недостаточно
         `.trim(),
       },
     ];
+  }
+
+  /**
+   * Обрезает историю сообщений, чтобы не превысить лимит контекста LLM.
+   * Сохраняет system промпты и последние N сообщений пользователь-ассистент.
+   */
+  private ensureContextLimit(): void {
+    // Разделяем system промпты и остальные сообщения
+    const systemMessages = this.messages.filter(m => m.role === 'system');
+    const userAssistantMessages = this.messages.filter(m => m.role !== 'system');
+    
+    // Если превышен лимит, оставляем только последние сообщения
+    if (userAssistantMessages.length > this.MAX_CONTEXT_MESSAGES) {
+      const recentMessages = userAssistantMessages.slice(-this.MAX_CONTEXT_MESSAGES);
+      
+      // Пересобираем массив: system промпты + недавние сообщения
+      this.messages.length = 0;
+      this.messages.push(...systemMessages, ...recentMessages);
+      
+      if (process.env.DEBUG) {
+        console.log(`[LLM] Context trimmed: kept last ${this.MAX_CONTEXT_MESSAGES} messages`);
+      }
+    }
   }
 
   /**
@@ -135,8 +196,38 @@ export class InteractiveQueryBuilder {
     } else {
       this.messages.push({ role: "assistant", content: JSON.stringify({ action: "final" }) });
     }
+    
+    // Обрезаем историю после добавления ответа ассистента
+    this.ensureContextLimit();
 
     return step;
+  }
+
+  /**
+   * Добавить информацию о найденных результатах в контекст диалога.
+   * Это позволяет LLM понимать контекст для следующих уточнений (например, "найди дешевле").
+   */
+  addSearchResults(count: number, summary: string): void {
+    // Ограничиваем длину summary, чтобы не раздувать контекст
+    const truncatedSummary = summary.length > 1000 
+      ? summary.substring(0, 1000) + "..." 
+      : summary;
+    
+    this.messages.push({
+      role: "system",
+      content: `
+Система поиска выполнила запрос.
+Найдено результатов: ${count}.
+Краткое описание топа выдачи (для контекста, не выдумывай их):
+${truncatedSummary}
+
+Если пользователь попросит изменить параметры (дешевле, мощнее, другой бренд),
+используй эти данные как отправную точку для нового SearchQuery.
+`.trim()
+    });
+    
+    // Обрезаем историю после добавления результатов
+    this.ensureContextLimit();
   }
 }
 

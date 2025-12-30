@@ -8,6 +8,9 @@
     "start": "ts-node src/cli/index.ts",
     "embed:equipment": "ts-node src/worker/embed-equipment.ts",
     "serve": "ts-node src/http/server.ts",
+    "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
+    "generate:dictionary": "ts-node src/scripts/generate-dictionary.ts",
+    "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
