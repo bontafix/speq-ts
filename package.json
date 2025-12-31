@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "ts-node src/cli/index.ts",
+    "bot": "ts-node src/telegram/index.ts",
     "embed:equipment": "ts-node src/worker/embed-equipment.ts",
     "serve": "ts-node src/http/server.ts",
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
@@ -35,6 +36,7 @@
     "chalk": "^4.1.2",
     "dotenv": "^17.2.3",
     "groq-sdk": "^0.3.3",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "telegraf": "^4.16.3"
   }
 }
