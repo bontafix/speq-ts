@@ -74,9 +74,6 @@ function parseSearchQuery(url: URL): SearchQuery {
   const category = params.get("category");
   if (category) query.category = category;
 
-  const subcategory = params.get("subcategory");
-  if (subcategory) query.subcategory = subcategory;
-
   const brand = params.get("brand");
   if (brand) query.brand = brand;
 
@@ -112,7 +109,7 @@ const server = http.createServer(async (req, res) => {
         JSON.stringify(
           {
             error:
-              "Укажите хотя бы один из параметров: text, category, brand (опционально: subcategory, region, limit).",
+              "Укажите хотя бы один из параметров: text, category, brand (опционально: region, limit).",
           },
           null,
           2,

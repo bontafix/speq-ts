@@ -182,10 +182,6 @@ export class EquipmentRepository {
       values.push(`%${query.category.trim()}%`);
       whereParts.push(`category ILIKE $${values.length}`);
     }
-    if (query.subcategory && query.subcategory.trim()) {
-      values.push(`%${query.subcategory.trim()}%`);
-      whereParts.push(`subcategory ILIKE $${values.length}`);
-    }
     if (query.brand && query.brand.trim()) {
       values.push(query.brand.trim());
       whereParts.push(`brand = $${values.length}`);
@@ -336,7 +332,6 @@ export class EquipmentRepository {
     limit: number,
     filters?: {
       category?: string;
-      subcategory?: string;
       brand?: string;
       region?: string;
       parameters?: Record<string, string | number>;
@@ -358,13 +353,10 @@ export class EquipmentRepository {
     const params: any[] = [embeddingLiteral, limit];
     
     if (filters?.category && filters.category.trim()) {
-      params.push(filters.category.trim());
-      whereParts.push(`category = $${params.length}`);
-    }
-    
-    if (filters?.subcategory && filters.subcategory.trim()) {
-      params.push(filters.subcategory.trim());
-      whereParts.push(`subcategory = $${params.length}`);
+      // Как и в FTS: делаем мягкий матч по подстроке (LLM часто дает "Бульдозер",
+      // а в БД может быть "Бульдозеры"/"Колесные бульдозеры" и т.п.)
+      params.push(`%${filters.category.trim()}%`);
+      whereParts.push(`category ILIKE $${params.length}`);
     }
     
     if (filters?.brand && filters.brand.trim()) {
@@ -439,7 +431,6 @@ export class EquipmentRepository {
             ' ',
             name,
             category,
-            subcategory,
             brand,
             region
           )

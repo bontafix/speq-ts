@@ -189,7 +189,7 @@ export class QueryParameterNormalizer {
           const keyIndex = values.length - 1;
           const valueIndex = values.length;
           conditions.push(
-            `(main_parameters->>$${keyIndex})::numeric >= $${valueIndex}`
+            `(normalized_parameters->>$${keyIndex})::numeric >= $${valueIndex}`
           );
         }
       } else if (key.endsWith("_max")) {
@@ -200,7 +200,7 @@ export class QueryParameterNormalizer {
           const keyIndex = values.length - 1;
           const valueIndex = values.length;
           conditions.push(
-            `(main_parameters->>$${keyIndex})::numeric <= $${valueIndex}`
+            `(normalized_parameters->>$${keyIndex})::numeric <= $${valueIndex}`
           );
         }
       } else {
@@ -212,11 +212,11 @@ export class QueryParameterNormalizer {
         // Для чисел используем numeric сравнение, для строк - text
         if (typeof value === "number") {
           conditions.push(
-            `(main_parameters->>$${keyIndex})::numeric = $${valueIndex}`
+            `(normalized_parameters->>$${keyIndex})::numeric = $${valueIndex}`
           );
         } else {
           conditions.push(
-            `main_parameters->>$${keyIndex} = $${valueIndex}::text`
+            `normalized_parameters->>$${keyIndex} = $${valueIndex}::text`
           );
         }
       }

@@ -110,7 +110,6 @@ export class SearchEngine {
         // Передаем фильтры в vector search (только если они заданы)
         const filters: any = {};
         if (normalizedQuery.category) filters.category = normalizedQuery.category;
-        if (normalizedQuery.subcategory) filters.subcategory = normalizedQuery.subcategory;
         if (normalizedQuery.brand) filters.brand = normalizedQuery.brand;
         if (normalizedQuery.region) filters.region = normalizedQuery.region;
         if (normalizedQuery.parameters) filters.parameters = normalizedQuery.parameters;
@@ -135,9 +134,16 @@ export class SearchEngine {
     if (vectorResult.status === 'rejected') console.warn('[Search] Vector search failed:', vectorResult.reason);
 
     // 2.3 RELAXED VECTOR SEARCH (FALLBACK)
-    // Если результатов мало (< 3), и есть эмбеддинг, пробуем найти что-то без фильтров
-    // но только если были какие-то фильтры, иначе это дубликат обычного поиска
-    const hasFilters = normalizedQuery.category || normalizedQuery.brand || normalizedQuery.parameters;
+    // Если результатов мало (< 3), и есть эмбеддинг, пробуем найти что-то "помягче".
+    //
+    // ВАЖНО: "relaxed" должен ослаблять только "мягкие" фильтры (категория/бренд),
+    // но НЕ должен игнорировать технические ограничения (parameters) и/или регион,
+    // иначе в выдачу попадут позиции, не соответствующие условиям пользователя.
+    const hasFilters =
+      normalizedQuery.category ||
+      normalizedQuery.brand ||
+      normalizedQuery.region ||
+      normalizedQuery.parameters;
     let relaxedResults: EquipmentSummary[] = [];
 
     if (queryEmbedding && (ftsResults.length + vectorResults.length) < 3 && hasFilters) {
@@ -145,11 +151,17 @@ export class SearchEngine {
         console.log('[Search] Low results with filters. Attempting relaxed vector search...');
       }
       try {
-        // Ищем чисто по смыслу, без жестких фильтров по категории/бренду
+        // Ищем по смыслу, но сохраняем "жесткие" ограничения (parameters/region),
+        // ослабляя только category/brand.
+        const relaxedFilters: any = {};
+        if (normalizedQuery.region) relaxedFilters.region = normalizedQuery.region;
+        if (normalizedQuery.parameters) relaxedFilters.parameters = normalizedQuery.parameters;
+
         relaxedResults = await this.equipmentRepository.vectorSearchWithEmbedding(
             normalizedQuery.text!, 
             queryEmbedding, 
-            limit
+            limit,
+            Object.keys(relaxedFilters).length > 0 ? relaxedFilters : undefined
         );
       } catch (e) {
         console.warn('[Search] Relaxed vector search failed:', e);
