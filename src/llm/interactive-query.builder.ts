@@ -32,6 +32,13 @@ function parseStepJson(raw: string): InteractiveQueryStep {
 
   const parsed = JSON.parse(jsonStr) as any;
   const action = parsed?.action;
+
+  // Если LLM пытается ответить простым текстом без action (иногда бывает при сбоях)
+  // или если это явно просто ответ на вопрос "что ты умеешь"
+  if (!action && typeof parsed === 'string') {
+     return { action: "ask", question: parsed };
+  }
+
   if (action === "ask") {
     const question = String(parsed?.question ?? "").trim();
     if (!question) throw new Error("LLM вернул action=ask, но без question");
@@ -40,7 +47,11 @@ function parseStepJson(raw: string): InteractiveQueryStep {
   if (action === "final") {
     const query = parsed?.query;
     if (!query || typeof query !== "object") {
-      throw new Error("LLM вернул action=final, но query отсутствует или не объект");
+       // Если LLM ошибся и вернул final без query, считаем это "ask" с просьбой уточнить
+       if (parsed.message || parsed.text) {
+           return { action: "ask", question: parsed.message || parsed.text };
+       }
+       throw new Error("LLM вернул action=final, но query отсутствует или не объект");
     }
     
     // Валидируем и нормализуем SearchQuery от LLM
@@ -48,7 +59,12 @@ function parseStepJson(raw: string): InteractiveQueryStep {
       const validatedQuery = SearchQueryValidator.validate(query);
       return { action: "final", query: validatedQuery };
     } catch (error: any) {
-      throw new Error(`Некорректный SearchQuery от LLM: ${error.message}`);
+      // Если валидация не прошла (например, пустой запрос), превращаем это в вопрос пользователю
+      console.warn(`[LLM] Query validation failed, fallback to ask. Error: ${error.message}`);
+      return { 
+          action: "ask", 
+          question: "Я не совсем понял, что именно искать. Уточните категорию или параметры." 
+      };
     }
   }
 
@@ -58,6 +74,7 @@ function parseStepJson(raw: string): InteractiveQueryStep {
 export interface InteractiveQueryBuilderOptions {
   model: string;
   maxTurns?: number;
+  history?: ChatMessage[] | undefined;
 }
 
 export class InteractiveQueryBuilder {
@@ -69,10 +86,13 @@ export class InteractiveQueryBuilder {
     private readonly provider: Pick<LLMProvider, "chat">,
     private readonly options: InteractiveQueryBuilderOptions,
   ) {
-    this.messages = [
-      {
-        role: "system",
-        content: `
+    if (this.options.history && this.options.history.length > 0) {
+      this.messages = [...this.options.history];
+    } else {
+      this.messages = [
+        {
+          role: "system",
+          content: `
 Ты помощник по подбору промышленной техники.
 Твоя задача — В ДИАЛОГЕ преобразовать запрос пользователя на русском языке в JSON-объект SearchQuery.
 
@@ -81,9 +101,15 @@ export class InteractiveQueryBuilder {
 
 1) {"action":"ask","question":"..."}
    Используй, если не хватает данных или есть неоднозначность (1 вопрос за шаг).
+   ВАЖНО: Если пользователь назвал только категорию (например, "кран"), ОБЯЗАТЕЛЬНО спроси про параметры (грузоподъемность, бренд, регион).
+   Не делай поиск по слишком широкому запросу, если это не явная просьба "показать всё".
+   
+   ЕСЛИ ПОЛЬЗОВАТЕЛЬ СПРАШИВАЕТ "ЧТО ТЫ УМЕЕШЬ?" ИЛИ "ЧТО ЕСТЬ В КАТАЛОГЕ?":
+   Отвечай через action="ask" с перечислением основных категорий.
+   Пример: {"action":"ask","question":"В нашем каталоге более 1000 единиц техники: автокраны, экскаваторы, бульдозеры, погрузчики и другое. Что именно вас интересует?"}
 
 2) {"action":"final","query":{...}}
-   Используй, когда достаточно данных. query должен соответствовать SearchQuery:
+   Используй, когда достаточно данных (есть категория И хотя бы один параметр/бренд/регион) или пользователь просит искать "как есть".
    {
      "text"?: string;           // Текстовый запрос для семантического поиска
      "category"?: string;        // Категория техники (точное значение)
@@ -129,6 +155,9 @@ export class InteractiveQueryBuilder {
 Запрос: "Покажи краны грузоподъемностью более 80 тонн в Москве"
 Ответ: {"action":"final","query":{"text":"кран","category":"Кран","region":"Москва","parameters":{"грузоподъемность_min":80}}}
 
+Запрос: "Мне нужен кран"
+Ответ: {"action":"ask","question":"Какой тип крана вас интересует? Какая нужна грузоподъемность и в каком регионе?"}
+
 Запрос: "Ищу технику для стройки"
 Ответ: {"action":"ask","question":"Какой именно тип техники вас интересует? Например: экскаватор, кран, бульдозер, погрузчик?"}
 
@@ -140,8 +169,13 @@ export class InteractiveQueryBuilder {
 - Если пользователь указал "/done" или "хватит" — верни best-effort final
 - Задавай уточняющие вопросы только если информации явно недостаточно
         `.trim(),
-      },
-    ];
+        },
+      ];
+    }
+  }
+
+  public getHistory(): ChatMessage[] {
+    return [...this.messages];
   }
 
   /**

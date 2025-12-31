@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "ts-node src/cli/index.ts",
     "bot": "ts-node src/telegram/index.ts",
+    "bot:dev": "nodemon --watch src --ext ts --signal SIGTERM --exec \"ts-node src/telegram/index.ts\"",
     "embed:equipment": "ts-node src/worker/embed-equipment.ts",
     "serve": "ts-node src/http/server.ts",
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@types/node": "^25.0.3",
     "@types/pg": "^8.16.0",
+    "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
