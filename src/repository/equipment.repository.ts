@@ -236,6 +236,13 @@ export class EquipmentRepository {
       LIMIT $${values.length + 1}
     `;
 
+    if (process.env.DEBUG_SEARCH) {
+      console.log('\n--- FTS SQL Log ---');
+      console.log('Query:', sql.replace(/\s+/g, ' ').trim());
+      console.log('Params:', values);
+      console.log('-------------------\n');
+    }
+
     const result = await pgPool.query(sql, [...values, safeLimit]);
     return result.rows;
   }
@@ -403,9 +410,11 @@ export class EquipmentRepository {
     `;
 
     try {
-      if (process.env.DEBUG) {
-        console.log('[VectorSearch] SQL:', sql.replace(/\s+/g, ' ').trim());
-        console.log('[VectorSearch] Params:', params.slice(2).map((p, i) => `$${i+3}=${p}`).join(', '));
+      if (process.env.DEBUG || process.env.DEBUG_SEARCH) {
+        console.log('\n--- Vector Search SQL Log ---');
+        console.log('SQL:', sql.replace(/\s+/g, ' ').trim());
+        console.log('Params (except vector):', params.slice(1).map((p, i) => `$${i+2}=${p}`).join(', '));
+        console.log('-----------------------------\n');
       }
       
       const result = await pgPool.query(sql, params);

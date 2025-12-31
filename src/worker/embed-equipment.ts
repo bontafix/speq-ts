@@ -3,6 +3,7 @@
 import "dotenv/config";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { LLMProviderFactory } from "../llm";
+import { ConfigService } from "../config/config";
 
 /**
  * Worker для offline-заполнения эмбеддингов по каталогу оборудования.
@@ -16,8 +17,11 @@ import { LLMProviderFactory } from "../llm";
  * worker выступает прослойкой и сам управляет чтением/записью в PostgreSQL.
  */
 
-const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
-const BATCH_SIZE = process.env.EMBED_BATCH_SIZE ? Number(process.env.EMBED_BATCH_SIZE) : 32;
+const configService = new ConfigService();
+const EMBED_MODEL = configService.llm.embeddingModel;
+// Уменьшаем размер батча до 10 для стабильности на локальных машинах,
+// если не задано иное через ENV.
+const BATCH_SIZE = process.env.EMBED_BATCH_SIZE ? Number(process.env.EMBED_BATCH_SIZE) : 10;
 
 async function main() {
   const repo = new EquipmentRepository();
