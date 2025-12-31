@@ -112,6 +112,12 @@ export class InteractiveQueryBuilder {
 - Для точного значения: {"мощность": 150}
 - Извлекай только те параметры, которые ЯВНО указал пользователь
 
+СБРОС КОНТЕКСТА:
+- Если пользователь резко меняет тему (например, искали краны, а теперь просит "покажи бульдозеры"),
+  НЕ тяни старые фильтры (category, parameters) в новый запрос. Начни с чистого листа для новой темы.
+- Если пользователь уточняет текущий запрос (например, "а есть подешевле?"),
+  СОХРАНЯЙ предыдущие фильтры и добавляй новые условия.
+
 Примеры хороших SearchQuery:
 
 Запрос: "Нужен экскаватор Caterpillar с ковшом от 1 кубометра"
@@ -188,6 +194,14 @@ export class InteractiveQueryBuilder {
 
     const response = await this.provider.chat(chatOptions);
     const raw = response.message.content;
+
+    if (process.env.DEBUG_SEARCH) {
+      console.log('\n--- LLM Interaction Log ---');
+      console.log('User Input:', text);
+      console.log('LLM Raw Response:', raw);
+      console.log('---------------------------\n');
+    }
+
     const step = parseStepJson(raw);
 
     // Чтобы следующий ход учитывал вопрос ассистента, добавим его в историю.

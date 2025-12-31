@@ -94,54 +94,80 @@ export class SearchEngine {
 
     // Стратегия 2: Vector (Смысловое совпадение)
     let vectorPromise: Promise<EquipmentSummary[]> = Promise.resolve([]);
+    let embeddingPromise: Promise<number[] | null> = Promise.resolve(null);
+    
     // Векторный поиск включаем только если есть текст запроса и доступен LLM для эмбеддинга
     const vectorEnabled = process.env.ENABLE_VECTOR_SEARCH !== "false"; // По умолчанию включено
 
     if (vectorEnabled && normalizedQuery.text && normalizedQuery.text.trim().length > 0 && this.llmFactory) {
-      // Передаем фильтры в vector search (только если они заданы)
-      const filters: {
-        category?: string;
-        subcategory?: string;
-        brand?: string;
-        region?: string;
-        parameters?: Record<string, string | number>;
-      } = {};
+      // 2.1 Генерируем эмбеддинг один раз
+      embeddingPromise = this.getEmbedding(normalizedQuery.text);
       
-      if (normalizedQuery.category) filters.category = normalizedQuery.category;
-      if (normalizedQuery.subcategory) filters.subcategory = normalizedQuery.subcategory;
-      if (normalizedQuery.brand) filters.brand = normalizedQuery.brand;
-      if (normalizedQuery.region) filters.region = normalizedQuery.region;
-      if (normalizedQuery.parameters) filters.parameters = normalizedQuery.parameters;
-      
-      vectorPromise = this.performVectorSearch(normalizedQuery.text, limit, filters);
+      // 2.2 Запускаем строгий поиск с фильтрами
+      vectorPromise = embeddingPromise.then(vector => {
+        if (!vector) return [];
+        
+        // Передаем фильтры в vector search (только если они заданы)
+        const filters: any = {};
+        if (normalizedQuery.category) filters.category = normalizedQuery.category;
+        if (normalizedQuery.subcategory) filters.subcategory = normalizedQuery.subcategory;
+        if (normalizedQuery.brand) filters.brand = normalizedQuery.brand;
+        if (normalizedQuery.region) filters.region = normalizedQuery.region;
+        if (normalizedQuery.parameters) filters.parameters = normalizedQuery.parameters;
+        
+        return this.equipmentRepository.vectorSearchWithEmbedding(normalizedQuery.text!, vector, limit, filters);
+      });
     }
 
-    // Используем Promise.allSettled вместо Promise.all для надежности:
-    // Если vector search упадет, FTS результаты все равно будут доступны
-    const [ftsResult, vectorResult] = await Promise.allSettled([ftsPromise, vectorPromise]);
+    // Используем Promise.all для ожидания результатов (FTS и Vector запускаются параллельно)
+    const [ftsResult, vectorResult, embeddingResult] = await Promise.allSettled([
+      ftsPromise, 
+      vectorPromise,
+      embeddingPromise
+    ]);
     
-    const ftsResults = ftsResult.status === 'fulfilled' ? ftsResult.value : [];
-    const vectorResults = vectorResult.status === 'fulfilled' ? vectorResult.value : [];
-    
-    // Логируем ошибки для мониторинга
-    if (ftsResult.status === 'rejected') {
-      console.error('[Search] FTS search failed:', ftsResult.reason);
-    }
-    if (vectorResult.status === 'rejected') {
-      console.warn('[Search] Vector search failed (using FTS only):', vectorResult.reason);
+    let ftsResults = ftsResult.status === 'fulfilled' ? ftsResult.value : [];
+    let vectorResults = vectorResult.status === 'fulfilled' ? vectorResult.value : [];
+    const queryEmbedding = embeddingResult.status === 'fulfilled' ? embeddingResult.value : null;
+
+    // Логируем ошибки
+    if (ftsResult.status === 'rejected') console.error('[Search] FTS search failed:', ftsResult.reason);
+    if (vectorResult.status === 'rejected') console.warn('[Search] Vector search failed:', vectorResult.reason);
+
+    // 2.3 RELAXED VECTOR SEARCH (FALLBACK)
+    // Если результатов мало (< 3), и есть эмбеддинг, пробуем найти что-то без фильтров
+    // но только если были какие-то фильтры, иначе это дубликат обычного поиска
+    const hasFilters = normalizedQuery.category || normalizedQuery.brand || normalizedQuery.parameters;
+    let relaxedResults: EquipmentSummary[] = [];
+
+    if (queryEmbedding && (ftsResults.length + vectorResults.length) < 3 && hasFilters) {
+      if (process.env.DEBUG_SEARCH) {
+        console.log('[Search] Low results with filters. Attempting relaxed vector search...');
+      }
+      try {
+        // Ищем чисто по смыслу, без жестких фильтров по категории/бренду
+        relaxedResults = await this.equipmentRepository.vectorSearchWithEmbedding(
+            normalizedQuery.text!, 
+            queryEmbedding, 
+            limit
+        );
+      } catch (e) {
+        console.warn('[Search] Relaxed vector search failed:', e);
+      }
     }
 
-    // 3. Если ничего не найдено - пробуем fallback
-    if (ftsResults.length === 0 && vectorResults.length === 0) {
+    // 3. Если ничего не найдено вообще - пробуем fallback (FTS без category)
+    if (ftsResults.length === 0 && vectorResults.length === 0 && relaxedResults.length === 0) {
       return await this.handleNoResults(normalizedQuery, limit);
     }
 
     // 4. Гибридное слияние (RRF)
-    const merged = this.hybridFusion(ftsResults, vectorResults, limit);
+    const merged = this.hybridFusion(ftsResults, vectorResults, relaxedResults, limit);
     
     const strategies: string[] = [];
     if (ftsResults.length > 0) strategies.push("fts");
-    if (vectorResults.length > 0) strategies.push("vector");
+    if (vectorResults.length > 0) strategies.push("vector_strict");
+    if (relaxedResults.length > 0) strategies.push("vector_relaxed");
 
     return {
       items: merged,
@@ -150,115 +176,24 @@ export class SearchEngine {
     };
   }
 
-  /**
-   * Обработка случая, когда ничего не найдено.
-   * Пробует fallback стратегии и предлагает подсказки.
-   */
-  private async handleNoResults(
-    query: SearchQuery, 
-    limit: number
-  ): Promise<CatalogSearchResult> {
-    const suggestions: CatalogSuggestions = {};
-    let message = "Подходящее оборудование не найдено.";
-
-    // FALLBACK 1: Если искали по category, попробовать повторить поиск без category.
-    // Это важно даже когда query.text уже задан:
-    // category в БД матчится по строгому равенству, а LLM часто выдаёт "Кран",
-    // тогда как в БД может быть "Гусеничные краны"/"Автокраны" и т.п.
-    if (query.category) {
-      if (process.env.DEBUG) {
-        console.log(`[Search] No results for category="${query.category}", trying fallback without category...`);
-      }
-      
-      // Убираем category (exactOptionalPropertyTypes требует не использовать undefined)
-      const { category, ...restQuery } = query;
-      const fallbackQuery: SearchQuery = { ...restQuery };
-      
+  private async getEmbedding(text: string): Promise<number[] | null> {
       try {
-        const fallbackResults = await this.equipmentRepository.fullTextSearch(
-          fallbackQuery, 
-          limit
-        );
+        if (!this.llmFactory) return null;
         
-        if (fallbackResults.length > 0) {
-          // Нашли без category — значит category не совпала с тем, что в БД.
-          suggestions.similarCategories = this.catalogIndex.findSimilarCategories(category);
-          
-          return {
-            items: fallbackResults,
-            total: fallbackResults.length,
-            usedStrategy: 'fallback',
-            suggestions,
-            message: `Категория "${category}" не найдена точно. Показаны результаты без фильтра category.`
-          };
-        }
-      } catch (error) {
-        console.error('[Search] Fallback search failed:', error);
-      }
-      
-      // Не нашли даже через text - предлагаем похожие категории
-      suggestions.similarCategories = this.catalogIndex.findSimilarCategories(category, 5);
-      
-      if (suggestions.similarCategories.length > 0) {
-        message = `Категория "${category}" не найдена. Возможно, вы искали: ${suggestions.similarCategories.slice(0, 3).join(', ')}?`;
-      }
-    }
-
-    // FALLBACK 2: Показать популярные категории
-    suggestions.popularCategories = this.catalogIndex.getPopularCategories(10);
-    
-    // FALLBACK 3: Примеры запросов
-    suggestions.exampleQueries = [
-      "Покажи краны",
-      "Найди экскаваторы с мощностью больше 100 л.с.",
-      "Какие есть погрузчики марки Caterpillar",
-    ];
-
-    return {
-      items: [],
-      total: 0,
-      usedStrategy: 'none',
-      suggestions,
-      message,
-    };
-  }
-
-  private async performVectorSearch(
-    text: string, 
-    limit: number,
-    filters?: {
-      category?: string;
-      subcategory?: string;
-      brand?: string;
-      region?: string;
-      parameters?: Record<string, string | number>;
-    }
-  ): Promise<EquipmentSummary[]> {
-    try {
-        if (!this.llmFactory) return [];
-        
-        // Генерируем вектор запроса через LLM
-        // ВАЖНО: Используем ту же модель эмбеддингов, что и worker заполнения БД
+        // ВАЖНО: Используем строго ту же модель, что и при индексации (ConfigService.llm.embeddingModel)
         const response = await this.llmFactory.embeddings({ 
             input: text,
             model: this.config.llm.embeddingModel
         });
-        
-        if (!response.embeddings || response.embeddings.length === 0) return [];
-        
-        const vector = response.embeddings[0];
-
-        if (!vector) return [];
-        
-        // Ищем в БД по вектору с учетом фильтров
-        return await this.equipmentRepository.vectorSearchWithEmbedding(text, vector!, limit, filters);
-    } catch (e) {
-        // Если эмбеддинги не работают (например модель не та), не ломаем весь поиск
-        if (process.env.DEBUG) console.warn("[Search] Vector search failed:", e);
-        return [];
-    }
+        return response.embeddings?.[0] || null;
+      } catch (e) {
+        if (process.env.DEBUG) console.warn("[Search] Embedding generation failed:", e);
+        return null;
+      }
   }
 
+  // Удален performVectorSearch в пользу прямой работы с embedding + repository
+  
   /**
    * Reciprocal Rank Fusion (RRF)
    * Алгоритм объединения результатов из разных поисковых систем.
@@ -268,33 +203,60 @@ export class SearchEngine {
   private hybridFusion(
     fts: EquipmentSummary[], 
     vector: EquipmentSummary[], 
+    relaxed: EquipmentSummary[],
     limit: number,
     k = 60
   ): EquipmentSummary[] {
     const scores = new Map<string, number>();
     const items = new Map<string, EquipmentSummary>();
+    const debugInfo: Record<string, { fts?: number, vector?: number, relaxed?: number, total: number, name: string }> = {};
 
-    // Считаем скоры для FTS
-    fts.forEach((item, index) => {
-        items.set(item.id, item);
-        const score = 1 / (k + index + 1);
-        scores.set(item.id, (scores.get(item.id) || 0) + score);
-    });
+    // Helper для подсчета скоров
+    const addScores = (results: EquipmentSummary[], sourceName: 'fts' | 'vector' | 'relaxed', weight = 1.0) => {
+        results.forEach((item, index) => {
+            if (!items.has(item.id)) items.set(item.id, item);
+            
+            // Формула RRF: 1 / (k + rank)
+            const rawScore = 1 / (k + index + 1);
+            const weightedScore = rawScore * weight;
+            
+            scores.set(item.id, (scores.get(item.id) || 0) + weightedScore);
+            
+            // Debug info
+            if (process.env.DEBUG_SEARCH) {
+                if (!debugInfo[item.id]) debugInfo[item.id] = { total: 0, name: item.name };
+                debugInfo[item.id][sourceName] = index + 1; // rank (1-based)
+            }
+        });
+    };
 
-    // Считаем скоры для Vector
-    vector.forEach((item, index) => {
-        // Если такой item уже был в FTS, он получит буст
-        if (!items.has(item.id)) {
-            items.set(item.id, item);
-        }
-        const score = 1 / (k + index + 1);
-        scores.set(item.id, (scores.get(item.id) || 0) + score);
-    });
+    // 1. FTS (Основной приоритет)
+    addScores(fts, 'fts', 1.0);
+
+    // 2. Vector Strict (Тоже высокий приоритет)
+    addScores(vector, 'vector', 1.0);
+
+    // 3. Relaxed (Пониженный приоритет - штрафуем, чтобы не перебивали точные)
+    // Вес 0.5 означает, что 1-е место в relaxed эквивалентно ~30-му месту в FTS
+    // (при k=60: 1/61 vs 0.5/61 = 1/122)
+    addScores(relaxed, 'relaxed', 0.5);
 
     // Сортируем по убыванию скора
     const sortedIds = Array.from(scores.entries())
         .sort((a, b) => b[1] - a[1])
         .map(entry => entry[0]);
+
+    if (process.env.DEBUG_SEARCH) {
+        console.log('\n--- RRF Fusion Log ---');
+        console.log('Top 5 results merged:');
+        sortedIds.slice(0, 5).forEach((id, i) => {
+            const info = debugInfo[id];
+            const score = scores.get(id)?.toFixed(4);
+            console.log(`#${i+1} [${score}] ${info.name.substring(0, 40)}... ` +
+                `(FTS:${info.fts || '-'}, Vec:${info.vector || '-'}, Rel:${info.relaxed || '-'})`);
+        });
+        console.log('----------------------\n');
+    }
 
     return sortedIds
         .slice(0, limit)

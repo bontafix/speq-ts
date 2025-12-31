@@ -32,6 +32,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "chalk": "^4.1.2",
     "dotenv": "^17.2.3",
     "groq-sdk": "^0.3.3",
     "pg": "^8.16.3"

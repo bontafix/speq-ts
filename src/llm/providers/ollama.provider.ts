@@ -118,9 +118,11 @@ export class OllamaProvider implements LLMProvider {
       req.on("error", (err) => {
         reject(new Error(`Ошибка подключения к Ollama (${this.baseUrl}): ${err.message}`));
       });
-      req.setTimeout(30000, () => {
+      // Увеличиваем таймаут до 120 секунд (2 минуты), так как генерация эмбеддингов
+      // для больших батчей на локальном CPU может занимать много времени.
+      req.setTimeout(120000, () => {
         req.destroy();
-        reject(new Error("Ollama API request timeout"));
+        reject(new Error("Ollama API request timeout (120s limit exceeded)"));
       });
       req.write(payload);
       req.end();
@@ -136,6 +138,7 @@ export class OllamaProvider implements LLMProvider {
     });
 
     return new Promise<EmbeddingResponse>((resolve, reject) => {
+      const startTime = Date.now();
       const req = http.request(
         url,
         {
@@ -149,6 +152,11 @@ export class OllamaProvider implements LLMProvider {
           const chunks: Buffer[] = [];
           res.on("data", (chunk) => chunks.push(chunk as Buffer));
           res.on("end", () => {
+            const duration = Date.now() - startTime;
+            if (duration > 10000 && process.env.DEBUG) {
+               console.warn(`[Ollama] Slow embedding request: ${duration}ms`);
+            }
+            
             try {
               const body = Buffer.concat(chunks).toString("utf8");
               
@@ -208,9 +216,10 @@ export class OllamaProvider implements LLMProvider {
       req.on("error", (err) => {
         reject(new Error(`Ошибка подключения к Ollama (${this.baseUrl}): ${err.message}`));
       });
-      req.setTimeout(30000, () => {
+      // Увеличиваем таймаут до 120 секунд для эмбеддингов
+      req.setTimeout(120000, () => {
         req.destroy();
-        reject(new Error("Ollama API request timeout"));
+        reject(new Error("Ollama API request timeout (120s limit exceeded)"));
       });
       req.write(payload);
       req.end();
