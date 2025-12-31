@@ -22,8 +22,14 @@ export class UnitParser {
     // Определяем единицу из исходного значения
     const sourceUnit = this.detectUnit(str);
 
+    // Нормализуем целевую единицу (например, "л.с." -> "hp")
+    let normalizedTargetUnit = this.detectUnit(targetUnit);
+    if (normalizedTargetUnit === "unknown") {
+      normalizedTargetUnit = targetUnit;
+    }
+
     // Конвертируем в целевую единицу
-    return this.convertUnit(numValue, sourceUnit, targetUnit);
+    return this.convertUnit(numValue, sourceUnit, normalizedTargetUnit);
   }
 
   /**
@@ -32,26 +38,7 @@ export class UnitParser {
   private detectUnit(str: string): string {
     const lower = str.toLowerCase();
 
-    // Масса
-    if (lower.includes("тонн") || lower.includes("т")) return "t";
-    if (lower.includes("кг") || lower.includes("kg")) return "kg";
-    if (lower.includes("г") && !lower.includes("кг")) return "g";
-
-    // Мощность
-    if (lower.includes("л.с.") || lower.includes("hp") || lower.includes("лс")) return "hp";
-    if (lower.includes("квт") || lower.includes("кw") || lower.includes("kw")) return "kw";
-    if (lower.includes("вт") && !lower.includes("квт") && !lower.includes("kw")) return "w";
-
-    // Длина
-    if (lower.includes("км") || lower.includes("km")) return "km";
-    if (lower.includes("мм") || lower.includes("mm")) return "mm";
-    if (lower.includes("см") || lower.includes("cm")) return "cm";
-    if (lower.includes("м") && !lower.includes("мм") && !lower.includes("см")) return "m";
-
-    // Объём
-    if (lower.includes("м³") || lower.includes("м3") || lower.includes("m³") || lower.includes("m3")) return "m3";
-    if (lower.includes("л") || lower.includes("литр") || lower.includes("l")) return "l";
-
+    // Сложные единицы (должны быть первыми)
     // Производительность
     if (lower.includes("т/ч") || lower.includes("t/h") || lower.includes("tph")) return "tph";
     if (lower.includes("м³/ч") || lower.includes("m3/h") || lower.includes("m3h")) return "m3h";
@@ -62,6 +49,28 @@ export class UnitParser {
     // Частота
     if (lower.includes("гц") || lower.includes("hz")) return "hz";
     if (lower.includes("об/мин") || lower.includes("rpm")) return "rpm";
+
+    // Мощность (должна быть перед массой, т.к. кВт содержит "т")
+    if (lower.includes("л.с.") || lower.includes("hp") || lower.includes("лс")) return "hp";
+    if (lower.includes("квт") || lower.includes("кw") || lower.includes("kw")) return "kw";
+    if (lower.includes("вт") && !lower.includes("квт") && !lower.includes("kw")) return "w";
+
+    // Объём
+    if (lower.includes("м³") || lower.includes("м3") || lower.includes("m³") || lower.includes("m3")) return "m3";
+    if (lower.includes("л") || lower.includes("литр") || lower.includes("l")) return "l";
+
+    // Длина (должна быть перед массой? нет, "м" и "т" вроде не пересекаются, но "км" и "т" - нет)
+    if (lower.includes("км") || lower.includes("km")) return "km";
+    if (lower.includes("мм") || lower.includes("mm")) return "mm";
+    if (lower.includes("см") || lower.includes("cm")) return "cm";
+    
+    // Масса
+    if (lower.includes("тонн") || lower.includes("т")) return "t";
+    if (lower.includes("кг") || lower.includes("kg")) return "kg";
+    if (lower.includes("г") && !lower.includes("кг")) return "g";
+
+    // Метры (после всего, т.к. "м" очень часто встречается)
+    if (lower.includes("м") && !lower.includes("мм") && !lower.includes("см") && !lower.includes("км") && !lower.includes("м3")) return "m";
 
     return "unknown";
   }
