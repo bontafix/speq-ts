@@ -192,8 +192,37 @@ export class SearchEngine {
       }
   }
 
-  // Удален performVectorSearch в пользу прямой работы с embedding + repository
-  
+  private async handleNoResults(query: SearchQuery, limit: number): Promise<CatalogSearchResult> {
+    if (process.env.DEBUG_SEARCH) {
+        console.log('[Search] No results found. Attempting fallback FTS (no filters)...');
+    }
+    
+    // Fallback: простой текстовый поиск без категорий и атрибутов, если они были
+    if (query.category || query.brand || query.parameters) {
+        // Создаем копию запроса без строгих фильтров
+        const fallbackQuery = { ...query };
+        delete fallbackQuery.category;
+        delete fallbackQuery.brand;
+        delete fallbackQuery.parameters;
+        
+        // Оставляем только текст
+        if (fallbackQuery.text && fallbackQuery.text.trim().length > 0) {
+            const results = await this.equipmentRepository.fullTextSearch(fallbackQuery, limit);
+            return {
+                items: results,
+                total: results.length,
+                usedStrategy: "fallback"
+            };
+        }
+    }
+    
+    return {
+        items: [],
+        total: 0,
+        usedStrategy: "none"
+    };
+  }
+
   /**
    * Reciprocal Rank Fusion (RRF)
    * Алгоритм объединения результатов из разных поисковых систем.
@@ -225,7 +254,9 @@ export class SearchEngine {
             // Debug info
             if (process.env.DEBUG_SEARCH) {
                 if (!debugInfo[item.id]) debugInfo[item.id] = { total: 0, name: item.name };
-                debugInfo[item.id][sourceName] = index + 1; // rank (1-based)
+                if (debugInfo[item.id]) {
+                    debugInfo[item.id]![sourceName] = index + 1; // rank (1-based)
+                }
             }
         });
     };
@@ -251,6 +282,7 @@ export class SearchEngine {
         console.log('Top 5 results merged:');
         sortedIds.slice(0, 5).forEach((id, i) => {
             const info = debugInfo[id];
+            if (!info) return;
             const score = scores.get(id)?.toFixed(4);
             console.log(`#${i+1} [${score}] ${info.name.substring(0, 40)}... ` +
                 `(FTS:${info.fts || '-'}, Vec:${info.vector || '-'}, Rel:${info.relaxed || '-'})`);
