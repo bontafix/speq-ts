@@ -78,6 +78,10 @@ export class SearchEngine {
         const result = this.queryNormalizer.normalizeQuery(query);
         normalizedQuery = result.normalizedQuery;
         
+        if (process.env.DEBUG || process.env.DEBUG_SEARCH) {
+          console.log('[SearchEngine] Normalized query params:', JSON.stringify(normalizedQuery, null, 2));
+        }
+
         // Логируем, если есть проблемы, но не мешаем пользователю
         if (result.stats.unresolved > 0 && process.env.DEBUG) {
           console.warn(`[Search] Unresolved params: ${result.stats.unresolved}`);

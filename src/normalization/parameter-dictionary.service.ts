@@ -84,6 +84,24 @@ export class ParameterDictionaryService {
   }
 
   /**
+   * Получить параметры, доступные для поиска (фильтрации)
+   * @param categoryId - (опционально) ID категории оборудования для уточнения релевантности
+   * @param limit - макс. кол-во параметров (default 10)
+   */
+  getSearchableParameters(limit: number = 10): ParameterDictionary[] {
+    if (!this.dictionaryLoaded) {
+      throw new Error("Справочник не загружен.");
+    }
+
+    // Возвращаем параметры с высоким приоритетом (0-29 для основных фильтров)
+    // Сортируем по приоритету (asc)
+    return this.dictionary
+      .filter((p) => p.priority < 50) // Отсекаем детали и мусор
+      .sort((a, b) => a.priority - b.priority)
+      .slice(0, limit);
+  }
+
+  /**
    * Найти canonical key по алиасу
    */
   findCanonicalKey(rawKey: string): ParameterDictionary | null {
