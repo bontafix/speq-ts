@@ -68,8 +68,8 @@ ${candidate.enumCandidates.length > 0 ? `Enum кандидаты: ${JSON.stringi
   "key": "canonical_key",           // стандартный ключ (латиница, snake_case, например: weight_kg, power_hp)
   "label_ru": "Название на русском",
   "description_ru": "Подробное описание параметра на русском языке",
-  "category": "weight|power|dimensions|performance|fuel|drive|environment|capacity|other",
-  "param_type": "number|enum|boolean",
+  "category": "weight|power|dimensions|performance|fuel|drive|environment|capacity|general|other",
+  "param_type": "number|enum|boolean|string",
   "unit": "кг|л.с.|кВт|м|см|мм|т/ч|м³",  // только для number, единица измерения
   "min_value": 0,                    // только для number, минимальное значение
   "max_value": 1000000,              // только для number, максимальное значение
@@ -78,28 +78,27 @@ ${candidate.enumCandidates.length > 0 ? `Enum кандидаты: ${JSON.stringi
     "petrol": "бензин"
   },
   "aliases": ["алиас1", "алиас2"],   // варианты названий из исходных данных
-  "priority": 0                       // 0 = самый важный, 1-2 для остальных
+  "priority": 10                     // ВАЖНО: Приоритет для UI фильтров (см. инструкцию)
 }
 
 Инструкции:
-1. Определи тип параметра (number/enum/boolean) на основе анализа
-2. Для number: определи единицу измерения и диапазон значений из примеров
-3. Для enum: создай canonical значения (латиница, lowercase, snake_case если нужно)
-4. Создай алиасы на основе исходного ключа и примеров значений
-5. Определи категорию параметра:
-   - weight: масса, вес
-   - power: мощность
-   - dimensions: размеры (длина, ширина, высота, глубина)
-   - performance: производительность
-   - fuel: топливо, энергия
-   - drive: ходовая часть
-   - environment: экология
-   - capacity: грузоподъёмность, объём
-   - other: прочее
-6. Приоритет: 0 для критичных (масса, мощность, тип питания), 1-2 для остальных
-7. SQL выражение будет сгенерировано автоматически, не включай его в ответ
+1. Определи тип параметра (number/enum/boolean/string).
+2. Для number: определи единицу измерения и диапазон.
+3. Для enum: создай canonical значения.
+4. Создай алиасы.
+5. Определи категорию (general - для бренда, года, модели).
+6. ПРИОРИТЕТ (priority) - это порядок отображения в фильтрах поиска (от 0 до 100):
+   - 0-9: КРИТИЧЕСКИ ВАЖНЫЕ (Бренд, Модель, Год, Цена, Наличие). Всегда видны.
+   - 10-29: ОСНОВНЫЕ ХАРАКТЕРИСТИКИ (Вес, Мощность, Грузоподъемность, Наработка). Видны в фильтрах.
+   - 30-49: ВТОРОСТЕПЕННЫЕ (Тип двигателя, Ширина гусеницы, Экологический класс). В "Дополнительных фильтрах".
+   - 50-79: ДЕТАЛИ (Размеры, Объемы жидкостей, Комплектация). Только в карточке товара.
+   - 80-100: ТЕХНИЧЕСКИЕ/МУСОР (Код запчасти, внутренний ID). Скрыты.
+   
+   Оценивай параметр с точки зрения покупателя спецтехники: "Буду ли я фильтровать список по этому параметру?"
+   
+7. SQL выражение генерируется автоматически.
 
-Верни ТОЛЬКО валидный JSON без комментариев и дополнительного текста.
+Верни ТОЛЬКО валидный JSON без комментариев.
 `.trim();
 
   try {
@@ -147,9 +146,10 @@ ${candidate.enumCandidates.length > 0 ? `Enum кандидаты: ${JSON.stringi
     entry.key = entry.key.toLowerCase().replace(/[^a-z0-9_]/g, "_");
 
     return entry;
-  } catch (error) {
+  } catch (error: any) { // Добавили any
     console.error(`Ошибка при генерации записи для ${candidate.key}:`, error);
-    return null;
+    // Пробрасываем ошибку наверх, чтобы обработать retry
+    throw error;
   }
 }
 
@@ -277,8 +277,8 @@ async function main() {
   };
 
   // Обрабатываем только топ-N параметров с достаточной частотой
-  const minFrequency = parseInt(process.env.MIN_PARAM_FREQUENCY || "3", 10);
-  const maxParams = parseInt(process.env.MAX_PARAMS_TO_GENERATE || "50", 10);
+  const minFrequency = parseInt(process.env.MIN_PARAM_FREQUENCY || "2", 10);
+  const maxParams = parseInt(process.env.MAX_PARAMS_TO_GENERATE || "60", 10);
 
   const topParams = analysis
     .filter((p) => p.frequency >= minFrequency)
@@ -299,14 +299,46 @@ async function main() {
     console.log(`[${i + 1}/${topParams.length}] Обработка: ${param.key} (${param.frequency} раз)...`);
 
     try {
-      const entry = await generateDictionaryEntry(param, llmProvider);
+      // Реализуем механизм повторных попыток (Retry) для Rate Limit (429)
+      let retries = 3;
+      let entry: DictionaryEntry | null = null;
+      
+      while (retries >= 0) {
+        try {
+          entry = await generateDictionaryEntry(param, llmProvider);
+          break; // Успех
+        } catch (error: any) {
+          const errorMessage = error.message || String(error);
+          
+          if (errorMessage.includes("429") || errorMessage.includes("rate limit") || errorMessage.includes("Rate limit")) {
+            if (retries === 0) throw error; // Исчерпаны попытки
+            
+            // Пытаемся извлечь время ожидания
+            let waitTimeMs = 60000; // Default 60 sec
+            
+            // Ищем паттерн "Please try again in XmYs"
+            const timeMatch = errorMessage.match(/try again in (\d+m)?(\d+(\.\d+)?)s/);
+            if (timeMatch) {
+              const minutes = timeMatch[1] ? parseFloat(timeMatch[1].replace('m', '')) : 0;
+              const seconds = parseFloat(timeMatch[2]);
+              waitTimeMs = (minutes * 60 + seconds) * 1000 + 2000; // +2 sec buffer
+            }
+            
+            console.log(`  ⏳ Rate limit! Ожидание ${Math.ceil(waitTimeMs / 1000)} сек... (Осталось попыток: ${retries})`);
+            await new Promise(resolve => setTimeout(resolve, waitTimeMs));
+            retries--;
+          } else {
+            throw error; // Другая ошибка
+          }
+        }
+      }
 
       if (entry) {
         await saveDictionaryEntry(entry);
         console.log(`  ✓ Создана запись: ${entry.key} (${entry.label_ru})`);
         success++;
       } else {
-        console.log(`  ✗ Не удалось создать запись`);
+        console.log(`  ✗ Не удалось создать запись (пустой результат)`);
         failed++;
       }
     } catch (error) {
@@ -314,9 +346,9 @@ async function main() {
       failed++;
     }
 
-    // Небольшая задержка, чтобы не перегружать LLM
+    // Увеличенная базовая задержка, чтобы не перегружать LLM
     if (i < topParams.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
 

@@ -63,7 +63,7 @@ const parameters: ParameterEntry[] = [
       "Глубина копания",
     ],
     sql_expression: "main_parameters->>'Макс. глубина копания, мм.'",
-    priority: 1,
+    priority: 15,
   },
 
   // ========================================================================
@@ -99,7 +99,7 @@ const parameters: ParameterEntry[] = [
       "Объём ковша",
     ],
     sql_expression: "main_parameters->>'Объем ковша'",
-    priority: 1,
+    priority: 15,
   },
 
   // ========================================================================
@@ -140,7 +140,7 @@ const parameters: ParameterEntry[] = [
       "Масса",
     ],
     sql_expression: "main_parameters->>'Вес в рабочем состоянии'",
-    priority: 1,
+    priority: 5,
   },
 
   // ========================================================================
@@ -176,7 +176,7 @@ const parameters: ParameterEntry[] = [
       "Макс. грузоподъемность",
     ],
     sql_expression: "main_parameters->>'Грузоподъемность'",
-    priority: 1,
+    priority: 5,
   },
 
   // ========================================================================
@@ -213,7 +213,7 @@ const parameters: ParameterEntry[] = [
       "Макс. высота подъема",
     ],
     sql_expression: "main_parameters->>'Высота подъема'",
-    priority: 2,
+    priority: 15,
   },
 
   // ========================================================================
@@ -248,7 +248,7 @@ const parameters: ParameterEntry[] = [
       "Макс. вылет стрелы",
     ],
     sql_expression: "main_parameters->>'Вылет стрелы'",
-    priority: 2,
+    priority: 15,
   },
 
   // ========================================================================
@@ -279,7 +279,7 @@ const parameters: ParameterEntry[] = [
       "Макс. длина стрелы",
     ],
     sql_expression: "main_parameters->>'Длина стрелы'",
-    priority: 2,
+    priority: 15,
   },
 
   // ========================================================================
@@ -320,7 +320,7 @@ const parameters: ParameterEntry[] = [
       "Номинальная мощность",
     ],
     sql_expression: "main_parameters->>'Мощность двигателя'",
-    priority: 1,
+    priority: 10,
   },
 
   // ========================================================================
@@ -361,7 +361,7 @@ const parameters: ParameterEntry[] = [
       "Топливо",
     ],
     sql_expression: "main_parameters->>'Тип топлива'",
-    priority: 3,
+    priority: 30,
   },
 
   // ========================================================================
@@ -399,7 +399,7 @@ const parameters: ParameterEntry[] = [
       "Ходовая часть",
     ],
     sql_expression: "main_parameters->>'Тип привода'",
-    priority: 3,
+    priority: 30,
   },
 
   // ========================================================================
@@ -432,7 +432,7 @@ const parameters: ParameterEntry[] = [
       "Объём отвала",
     ],
     sql_expression: "main_parameters->>'Объем отвала'",
-    priority: 1,
+    priority: 15,
   },
 
   // ========================================================================
@@ -462,7 +462,7 @@ const parameters: ParameterEntry[] = [
       "Объем ковша погрузчика",
     ],
     sql_expression: "main_parameters->>'Вместимость ковша'",
-    priority: 1,
+    priority: 15,
   },
 
   // ========================================================================
@@ -495,7 +495,7 @@ const parameters: ParameterEntry[] = [
       "Производительность, т/ч",
     ],
     sql_expression: "main_parameters->>'Производительность'",
-    priority: 2,
+    priority: 15,
   },
 
   // ========================================================================
@@ -528,7 +528,7 @@ const parameters: ParameterEntry[] = [
       "Год",
     ],
     sql_expression: "main_parameters->>'Год выпуска'",
-    priority: 3,
+    priority: 1,
   },
 
   // ========================================================================
@@ -560,7 +560,7 @@ const parameters: ParameterEntry[] = [
       "Макс. скорость",
     ],
     sql_expression: "main_parameters->>'Скорость передвижения'",
-    priority: 3,
+    priority: 35,
   },
 
   // ========================================================================
@@ -591,7 +591,7 @@ const parameters: ParameterEntry[] = [
       "Топливный бак",
     ],
     sql_expression: "main_parameters->>'Объем топливного бака'",
-    priority: 4,
+    priority: 40,
   },
 
   // ========================================================================
@@ -620,7 +620,7 @@ const parameters: ParameterEntry[] = [
       "wheelbase_mm",
     ],
     sql_expression: "main_parameters->>'Колесная база, мм'",
-    priority: 2,
+    priority: 35,
   },
 
   // ========================================================================
@@ -664,7 +664,7 @@ const parameters: ParameterEntry[] = [
       "8x8",
     ],
     sql_expression: "main_parameters->>'Колесная формула'",
-    priority: 2,
+    priority: 15,
   },
 
   // ========================================================================
@@ -699,7 +699,7 @@ const parameters: ParameterEntry[] = [
       "emission",
     ],
     sql_expression: "main_parameters->>'Экологический класс'",
-    priority: 2,
+    priority: 30,
   },
 
   // ========================================================================
@@ -731,7 +731,7 @@ const parameters: ParameterEntry[] = [
       "transmission_type",
     ],
     sql_expression: "main_parameters->>'Тип КПП'",
-    priority: 2,
+    priority: 30,
   },
 
   // ========================================================================
@@ -758,7 +758,7 @@ const parameters: ParameterEntry[] = [
       "diff_ratio",
     ],
     sql_expression: "main_parameters->>'Передаточное число'",
-    priority: 2,
+    priority: 55,
   },
 
   // ========================================================================
@@ -787,7 +787,7 @@ const parameters: ParameterEntry[] = [
       "engine_cc",
     ],
     sql_expression: "main_parameters->>'Рабочий объем цилиндров, м³'",
-    priority: 2,
+    priority: 55,
   },
 
   // ========================================================================
@@ -816,7 +816,7 @@ const parameters: ParameterEntry[] = [
       "kingpin_load",
     ],
     sql_expression: "main_parameters->>'Нагрузка на ССУ, кг'",
-    priority: 2,
+    priority: 55,
   },
 
   // ========================================================================
@@ -842,7 +842,7 @@ const parameters: ParameterEntry[] = [
       "wheel_tire",
     ],
     sql_expression: "main_parameters->>'Шины'",
-    priority: 4,
+    priority: 60,
   },
 
   // ========================================================================
@@ -862,7 +862,7 @@ const parameters: ParameterEntry[] = [
       "cabin",
     ],
     sql_expression: "main_parameters->>'Кабина'",
-    priority: 4,
+    priority: 60,
   },
 
   // ========================================================================
@@ -883,7 +883,7 @@ const parameters: ParameterEntry[] = [
       "brake",
     ],
     sql_expression: "main_parameters->>'Тормозная система'",
-    priority: 4,
+    priority: 70,
   },
 
   // ========================================================================
@@ -905,7 +905,7 @@ const parameters: ParameterEntry[] = [
       "features",
     ],
     sql_expression: "main_parameters->>'Комфорт'",
-    priority: 4,
+    priority: 70,
   },
 
   // ========================================================================
@@ -924,7 +924,7 @@ const parameters: ParameterEntry[] = [
       "engine",
     ],
     sql_expression: "main_parameters->>'Модель двигателя'",
-    priority: 4,
+    priority: 60,
   },
 
   // ========================================================================
@@ -943,7 +943,7 @@ const parameters: ParameterEntry[] = [
       "engine_description",
     ],
     sql_expression: "main_parameters->>'Тип двигателя'",
-    priority: 4,
+    priority: 60,
   },
 
   // ========================================================================
@@ -962,7 +962,7 @@ const parameters: ParameterEntry[] = [
       "rear axle",
     ],
     sql_expression: "main_parameters->>'Задний мост'",
-    priority: 4,
+    priority: 80,
   },
 
   // ========================================================================
@@ -981,7 +981,7 @@ const parameters: ParameterEntry[] = [
       "front axle",
     ],
     sql_expression: "main_parameters->>'Передняя ось'",
-    priority: 4,
+    priority: 80,
   },
 
   // ========================================================================
@@ -1000,7 +1000,7 @@ const parameters: ParameterEntry[] = [
       "steering_system",
     ],
     sql_expression: "main_parameters->>'Рулевое управление'",
-    priority: 4,
+    priority: 80,
   },
 
   // ========================================================================
@@ -1019,7 +1019,7 @@ const parameters: ParameterEntry[] = [
       "fuel system",
     ],
     sql_expression: "main_parameters->>'Топливная система'",
-    priority: 4,
+    priority: 80,
   },
 
   // ========================================================================
@@ -1040,7 +1040,7 @@ const parameters: ParameterEntry[] = [
       "fifth_wheel",
     ],
     sql_expression: "main_parameters->>'Модель ССУ'",
-    priority: 4,
+    priority: 80,
   },
 ];
 
