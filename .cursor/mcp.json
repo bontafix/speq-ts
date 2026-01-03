@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/scripts/mcp-postgres.sh"
+      ],
+      "env": {}
+    }
+  }
+}
+

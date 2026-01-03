@@ -42,18 +42,20 @@ apply_migration() {
 
 # Если указан номер миграции, применяем только её
 if [ -n "$1" ]; then
-  migration_file="migrations/00$1_*.sql"
+  # Форматируем номер миграции с ведущими нулями до 3 цифр (001, 010, 011, ...)
+  migration_num=$(printf "%03d" "$1")
+  migration_file="migrations/${migration_num}_*.sql"
   if ls $migration_file 1> /dev/null 2>&1; then
     apply_migration $(ls $migration_file | head -1)
   else
-    echo "❌ Миграция $1 не найдена"
+    echo "❌ Миграция $1 не найдена (искали: $migration_file)"
     exit 1
   fi
 else
   # Применяем все миграции по порядку
   echo "🔄 Применение всех миграций..."
   
-  for migration in migrations/00*.sql; do
+  for migration in migrations/00*.sql migrations/01*.sql; do
     if [ -f "$migration" ]; then
       apply_migration "$migration"
       echo ""

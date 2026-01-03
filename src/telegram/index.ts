@@ -5,10 +5,11 @@ import { Telegraf, Markup } from "telegraf";
 import { AppContainer } from "../app/container";
 import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
 import { AnswerGenerator } from "../llm/answer.generator";
+import { CatalogIndexService } from "../catalog/catalog-index.service";
 import { createSessionStore } from "./session.store";
 import type { WizardSession } from "./types";
 import { logIncoming, logOutgoing } from "./telegram.logger";
-import { CALLBACK } from "./keyboards";
+import { CALLBACK, buildMainMenuKeyboard, buildCategoriesKeyboard, buildCategoryParamsKeyboard } from "./keyboards";
 
 function requireBotToken(): string {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
@@ -52,6 +53,11 @@ async function main() {
   await app.init();
   console.log("[Telegram] AppContainer готов.");
 
+  // 2. Инициализация CatalogIndexService для категорий
+  const catalogIndex = new CatalogIndexService();
+  await catalogIndex.ensureIndex();
+  console.log("[Telegram] CatalogIndex готов.");
+
   const answerGenerator = new AnswerGenerator();
 
   console.log(`[Telegram] API: ${apiRoot || "https://api.telegram.org"}`);
@@ -86,7 +92,7 @@ async function main() {
   async function resetToChat(ctx: any, telegramId: number) {
     const s = newSession(telegramId);
     await sessions.set(s);
-    await reply(ctx, "Контекст сброшен. Что ищем?");
+    await reply(ctx, "🔄 Контекст сброшен. Что ищем?", buildMainMenuKeyboard());
   }
 
   // Лог всех входящих апдейтов (сообщения/кнопки)
@@ -109,8 +115,18 @@ async function main() {
     const telegramId = ctx.from?.id;
     if (!telegramId) return;
 
-    await reply(ctx, "Привет! Я умный ассистент по подбору оборудования (Speq v2.0).\nНапишите, что вы ищете, например: «Мне нужен кран».");
-    await resetToChat(ctx, telegramId);
+    const s = newSession(telegramId);
+    await sessions.set(s);
+
+    await reply(
+      ctx, 
+      "👋 Привет! Я умный ассистент по подбору оборудования (Speq v2.0).\n\n" +
+      "🔍 **Напишите, что ищете**, например:\n" +
+      "• «Мне нужен кран грузоподъемностью 50 тонн»\n" +
+      "• «Экскаватор Caterpillar»\n\n" +
+      "Или нажмите кнопку ниже, чтобы посмотреть категории.",
+      { parse_mode: "Markdown", ...buildMainMenuKeyboard() }
+    );
   });
 
   bot.command("search", async (ctx) => {
@@ -218,14 +234,153 @@ async function main() {
   });
 
   bot.on("callback_query", async (ctx) => {
-    // Для кнопок (если будут использоваться в S_CHAT или останутся от старых сообщений)
-    // Пока просто отвечаем, что кнопка устарела или сбрасываем
     const data = (ctx.callbackQuery as any)?.data;
-    if (data === CALLBACK.reset) {
-        const telegramId = ctx.from?.id;
-        if(telegramId) await resetToChat(ctx, telegramId);
+    const telegramId = ctx.from?.id;
+    if (!telegramId || !data) {
+      await ctx.answerCbQuery().catch(() => undefined);
+      return;
     }
-    await ctx.answerCbQuery().catch(() => undefined);
+
+    try {
+      // Показать категории
+      if (data === CALLBACK.showCategories) {
+        const index = catalogIndex.getIndex();
+        if (!index) {
+          await ctx.answerCbQuery("Каталог загружается...");
+          return;
+        }
+
+        const categories = index.categories.map(c => ({ name: c.name, count: c.count }));
+        
+        // Сохраняем страницу в сессии
+        let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
+        session.page = 0;
+        session.categoryOptions = categories;
+        await sessions.set(session);
+
+        await ctx.editMessageText(
+          `📋 **Категории оборудования** (${index.totalItems} единиц)\n\nВыберите категорию:`,
+          { parse_mode: "Markdown", ...buildCategoriesKeyboard({ categories, page: 0 }) }
+        );
+        await ctx.answerCbQuery();
+        return;
+      }
+
+      // Пагинация категорий
+      if (data === CALLBACK.catPagePrev || data === CALLBACK.catPageNext) {
+        let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
+        const categories = session.categoryOptions ?? [];
+        
+        if (data === CALLBACK.catPagePrev) {
+          session.page = Math.max(0, session.page - 1);
+        } else {
+          session.page = session.page + 1;
+        }
+        await sessions.set(session);
+
+        await ctx.editMessageReplyMarkup(
+          buildCategoriesKeyboard({ categories, page: session.page }).reply_markup
+        );
+        await ctx.answerCbQuery();
+        return;
+      }
+
+      // Просмотр параметров категории
+      if (data.startsWith(CALLBACK.catParamsPrefix)) {
+        const catIndex = parseInt(data.slice(CALLBACK.catParamsPrefix.length), 10);
+        let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
+        
+        const categoryOption = session.categoryOptions?.[catIndex];
+        if (!categoryOption) {
+           await ctx.answerCbQuery("Ошибка: категория не найдена (устаревшее меню?)");
+           return;
+        }
+
+        const categoryName = categoryOption.name;
+        await ctx.answerCbQuery(`Загружаю параметры...`);
+        
+        // Получаем параметры с количеством оборудования
+        const paramsWithCount = await catalogIndex.getCategoryParametersWithCount(categoryName);
+        
+        let msg = `⚙️ **Параметры для категории «${categoryName}»**:\n\n`;
+        if (paramsWithCount.length === 0) {
+            msg += "_Параметры не найдены._";
+        } else {
+            msg += paramsWithCount.map(p => `• ${p.name} (${p.count} шт.)`).join("\n");
+        }
+        
+        msg += "\n\n_Эти параметры можно использовать при текстовом поиске._";
+
+        await ctx.editMessageText(
+            msg, 
+            { 
+                parse_mode: "Markdown", 
+                ...buildCategoryParamsKeyboard({ categoryIndex: catIndex }) 
+            }
+        );
+        return;
+      }
+
+      // Выбор категории — запуск поиска
+      if (data.startsWith(CALLBACK.catPickPrefix)) {
+        const catIndex = parseInt(data.slice(CALLBACK.catPickPrefix.length), 10);
+        let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
+        
+        const categoryOption = session.categoryOptions?.[catIndex];
+        if (!categoryOption) {
+           await ctx.answerCbQuery("Ошибка: категория не найдена (устаревшее меню?)");
+           return;
+        }
+
+        const categoryName = categoryOption.name;
+        
+        await ctx.answerCbQuery(`Ищу: ${categoryName}...`);
+        await ctx.sendChatAction("typing");
+
+        // Поиск по категории
+        const result = await app.catalogService.searchEquipment({ 
+          category: categoryName, 
+          limit: 10 
+        });
+
+        if (result.total === 0) {
+          await reply(ctx, `❌ В категории «${categoryName}» ничего не найдено.`);
+        } else {
+          await reply(ctx, `✅ **${categoryName}** — найдено: ${result.total}`, { parse_mode: "Markdown" });
+          const answerText = answerGenerator.generatePlainText(result.items);
+          await reply(ctx, answerText);
+        }
+
+        await reply(
+          ctx, 
+          "Напишите уточнение или выберите действие:",
+          buildMainMenuKeyboard()
+        );
+        return;
+      }
+
+      // Вернуться в главное меню
+      if (data === CALLBACK.backToMenu) {
+        await ctx.editMessageText(
+          "🔍 Напишите, что ищете, или выберите категорию:",
+          buildMainMenuKeyboard()
+        );
+        await ctx.answerCbQuery();
+        return;
+      }
+
+      // Сброс
+      if (data === CALLBACK.reset) {
+        await resetToChat(ctx, telegramId);
+        await ctx.answerCbQuery("Контекст сброшен");
+        return;
+      }
+
+      await ctx.answerCbQuery();
+    } catch (error: any) {
+      console.error("[Telegram] Callback error:", error);
+      await ctx.answerCbQuery("Ошибка").catch(() => undefined);
+    }
   });
 
   // 1. Установка команд меню

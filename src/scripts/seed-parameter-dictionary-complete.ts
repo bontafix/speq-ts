@@ -6,12 +6,20 @@
  * - Множество алиасов (русские, английские, сокращения)
  * - Правильные единицы измерения
  * - SQL expressions для поиска в БД
+ * - Автоматическую проверку покрытия параметров из реальных данных БД
+ * 
+ * После заполнения справочника автоматически проверяет:
+ * - Какие параметры из equipment.main_parameters покрыты справочником
+ * - Какие параметры не покрыты (с частотой использования)
+ * - Категоризацию непокрытых параметров (метаданные/технические/неизвестные)
+ * - Рекомендации по улучшению покрытия
  * 
  * Запуск: npx tsx src/scripts/seed-parameter-dictionary-complete.ts
  */
 
 import "dotenv/config";
 import { pgPool } from "../db/pg";
+import { ParameterDictionaryService } from "../normalization";
 
 interface ParameterEntry {
   key: string;
@@ -1044,6 +1052,280 @@ const parameters: ParameterEntry[] = [
   },
 ];
 
+/**
+ * Проверяет покрытие параметров из реальных данных БД
+ */
+async function checkCoverage() {
+  try {
+    // Загружаем справочник для проверки
+    const dictionaryService = new ParameterDictionaryService();
+    await dictionaryService.loadDictionary();
+    const dictionary = dictionaryService.getDictionary();
+    
+    console.log(`📚 Загружено параметров в справочнике: ${dictionary.length}\n`);
+
+    // Получаем все уникальные параметры из main_parameters
+    const sql = `
+      WITH param_keys AS (
+        SELECT DISTINCT jsonb_object_keys(main_parameters) AS param_key
+        FROM equipment
+        WHERE is_active = true
+          AND main_parameters IS NOT NULL
+          AND main_parameters != '{}'::jsonb
+      ),
+      param_stats AS (
+        SELECT 
+          pk.param_key,
+          COUNT(*) as frequency
+        FROM param_keys pk
+        CROSS JOIN equipment e
+        WHERE e.main_parameters ? pk.param_key
+          AND e.is_active = true
+        GROUP BY pk.param_key
+      )
+      SELECT 
+        param_key,
+        frequency
+      FROM param_stats
+      ORDER BY frequency DESC
+    `;
+
+    const result = await pgPool.query(sql);
+    const allParamsFromDb = result.rows;
+    
+    console.log(`📊 Найдено уникальных параметров в БД: ${allParamsFromDb.length}\n`);
+
+    if (allParamsFromDb.length === 0) {
+      console.log("⚠️  Нет данных для проверки покрытия");
+      return;
+    }
+
+    // Проверяем покрытие
+    const coverageStats = {
+      covered: [] as Array<{ key: string; frequency: number; canonicalKey: string }>,
+      uncovered: [] as Array<{ key: string; frequency: number; sampleValues: string[] }>,
+    };
+
+    let totalParams = 0;
+    let totalCovered = 0;
+
+    // Получаем примеры значений для непокрытых параметров
+    const uncoveredParams = new Set<string>();
+
+    for (const row of allParamsFromDb) {
+      const frequency = parseInt(row.frequency, 10) || 0;
+      totalParams += frequency;
+      const paramKey = row.param_key;
+      
+      // Проверяем, есть ли этот параметр в справочнике
+      const paramDef = dictionaryService.findCanonicalKey(paramKey);
+      
+      if (paramDef) {
+        totalCovered += frequency;
+        coverageStats.covered.push({
+          key: paramKey,
+          frequency: frequency,
+          canonicalKey: paramDef.key,
+        });
+      } else {
+        uncoveredParams.add(paramKey);
+        coverageStats.uncovered.push({
+          key: paramKey,
+          frequency: frequency,
+          sampleValues: [], // Заполним позже
+        });
+      }
+    }
+
+    // Получаем примеры значений для непокрытых параметров
+    if (uncoveredParams.size > 0) {
+      const uncoveredKeys = Array.from(uncoveredParams);
+      const valueMap = new Map<string, Set<string>>();
+      
+      // Для каждого непокрытого параметра получаем примеры значений
+      for (const paramKey of uncoveredKeys) {
+        const examplesSql = `
+          SELECT DISTINCT
+            main_parameters->>$1 AS param_value
+          FROM equipment
+          WHERE is_active = true
+            AND main_parameters IS NOT NULL
+            AND main_parameters != '{}'::jsonb
+            AND main_parameters ? $1
+            AND main_parameters->>$1 IS NOT NULL
+          LIMIT 3
+        `;
+        
+        try {
+          const examplesResult = await pgPool.query(examplesSql, [paramKey]);
+          
+          for (const row of examplesResult.rows) {
+            const value = row.param_value;
+            if (value != null) {
+              if (!valueMap.has(paramKey)) {
+                valueMap.set(paramKey, new Set());
+              }
+              const valueStr = typeof value === 'object' 
+                ? JSON.stringify(value).substring(0, 50) 
+                : String(value).substring(0, 50);
+              valueMap.get(paramKey)!.add(valueStr);
+            }
+          }
+        } catch (error) {
+          // Игнорируем ошибки для отдельных параметров
+          console.warn(`⚠️  Не удалось получить примеры для "${paramKey}"`);
+        }
+      }
+      
+      // Заполняем примеры
+      for (const uncovered of coverageStats.uncovered) {
+        const examples = valueMap.get(uncovered.key);
+        if (examples) {
+          uncovered.sampleValues = Array.from(examples).slice(0, 3);
+        }
+      }
+    }
+
+    // Выводим статистику
+    const coveragePercent = totalParams > 0 
+      ? Math.round((totalCovered / totalParams) * 100) 
+      : 0;
+    
+    console.log("=".repeat(80));
+    console.log("📈 СТАТИСТИКА ПОКРЫТИЯ");
+    console.log("=".repeat(80));
+    console.log(`Всего уникальных параметров в БД: ${allParamsFromDb.length}`);
+    console.log(`Параметров в справочнике: ${dictionary.length}`);
+    console.log(`Покрыто параметров: ${coverageStats.covered.length}`);
+    console.log(`Непокрыто параметров: ${coverageStats.uncovered.length}`);
+    console.log(`\nПо частоте использования:`);
+    console.log(`Всего использований параметров: ${totalParams}`);
+    console.log(`Покрыто использований: ${totalCovered}`);
+    console.log(`Непокрыто использований: ${totalParams - totalCovered}`);
+    console.log(`Процент покрытия: ${coveragePercent}%\n`);
+
+    // Выводим топ непокрытых параметров
+    if (coverageStats.uncovered.length > 0) {
+      const topUncovered = coverageStats.uncovered
+        .sort((a, b) => b.frequency - a.frequency)
+        .slice(0, 30);
+      
+      console.log("=".repeat(80));
+      console.log("🔝 ТОП-30 НЕПОКРЫТЫХ ПАРАМЕТРОВ");
+      console.log("=".repeat(80) + "\n");
+      
+      topUncovered.forEach((stat, index) => {
+        console.log(`${(index + 1).toString().padStart(2)}. "${stat.key}"`);
+        console.log(`    Встречается: ${stat.frequency} раз`);
+        if (stat.sampleValues.length > 0) {
+          console.log(`    Примеры значений:`);
+          stat.sampleValues.forEach(example => {
+            console.log(`      - ${example}`);
+          });
+        }
+        console.log();
+      });
+
+      // Категоризация непокрытых параметров
+      const categories = {
+        metadata: [] as string[],
+        technical: [] as string[],
+        unknown: [] as string[],
+      };
+
+      const metadataKeywords = ['производитель', 'модель', 'серийн', 'артикул', 'код', 'url', 'фото', 'картинка', 'изображ', 'дата', 'год', 'цвет', 'гарантия', 'описание'];
+      const technicalKeywords = ['мощность', 'вес', 'масса', 'глубина', 'высота', 'длина', 'ширина', 'объем', 'скорость', 'производительность', 'грузо', 'емкость', 'вместимость'];
+
+      for (const stat of topUncovered) {
+        const keyLower = stat.key.toLowerCase();
+        
+        if (metadataKeywords.some(kw => keyLower.includes(kw))) {
+          categories.metadata.push(stat.key);
+        } else if (technicalKeywords.some(kw => keyLower.includes(kw))) {
+          categories.technical.push(stat.key);
+        } else {
+          categories.unknown.push(stat.key);
+        }
+      }
+
+      console.log("=".repeat(80));
+      console.log("📂 КАТЕГОРИЗАЦИЯ НЕПОКРЫТЫХ ПАРАМЕТРОВ");
+      console.log("=".repeat(80) + "\n");
+
+      console.log("📋 Метаданные (можно игнорировать):");
+      console.log(`   Всего: ${categories.metadata.length}`);
+      if (categories.metadata.length > 0) {
+        categories.metadata.slice(0, 10).forEach(key => {
+          const stat = coverageStats.uncovered.find(s => s.key === key);
+          console.log(`   - "${key}" (${stat?.frequency || 0} раз)`);
+        });
+        if (categories.metadata.length > 10) {
+          console.log(`   ... и ещё ${categories.metadata.length - 10}`);
+        }
+      }
+      console.log();
+
+      console.log("🔧 Технические параметры (НУЖНО добавить в справочник!):");
+      console.log(`   Всего: ${categories.technical.length}`);
+      if (categories.technical.length > 0) {
+        categories.technical.slice(0, 10).forEach(key => {
+          const stat = coverageStats.uncovered.find(s => s.key === key);
+          console.log(`   - "${key}" (${stat?.frequency || 0} раз)`);
+        });
+        if (categories.technical.length > 10) {
+          console.log(`   ... и ещё ${categories.technical.length - 10}`);
+        }
+      }
+      console.log();
+
+      console.log("❓ Неизвестные:");
+      console.log(`   Всего: ${categories.unknown.length}`);
+      if (categories.unknown.length > 0) {
+        categories.unknown.slice(0, 10).forEach(key => {
+          const stat = coverageStats.uncovered.find(s => s.key === key);
+          console.log(`   - "${key}" (${stat?.frequency || 0} раз)`);
+        });
+        if (categories.unknown.length > 10) {
+          console.log(`   ... и ещё ${categories.unknown.length - 10}`);
+        }
+      }
+      console.log();
+
+      // Рекомендации
+      console.log("=".repeat(80));
+      console.log("💡 РЕКОМЕНДАЦИИ");
+      console.log("=".repeat(80) + "\n");
+
+      if (categories.technical.length > 0) {
+        console.log("✅ Действия для улучшения покрытия:\n");
+        console.log("1. Добавить алиасы для существующих параметров:");
+        console.log("   Отредактировать: src/scripts/seed-parameter-dictionary-complete.ts");
+        console.log("   Добавить алиасы в массив aliases существующих параметров\n");
+        console.log("2. Создать новые параметры:");
+        console.log("   Отредактировать: src/scripts/seed-parameter-dictionary-complete.ts");
+        console.log("   Добавить новые объекты в массив parameters\n");
+        console.log("3. Перезапустить скрипт:");
+        console.log("   npx tsx src/scripts/seed-parameter-dictionary-complete.ts\n");
+      } else {
+        console.log("✅ Все технические параметры покрыты!");
+        console.log("📋 Непокрытые параметры - это метаданные, можно игнорировать\n");
+      }
+    } else {
+      console.log("=".repeat(80));
+      console.log("🎉 ОТЛИЧНО! ВСЕ ПАРАМЕТРЫ ПОКРЫТЫ!");
+      console.log("=".repeat(80) + "\n");
+    }
+
+    console.log("=".repeat(80));
+    console.log("✨ Проверка покрытия завершена");
+    console.log("=".repeat(80) + "\n");
+
+  } catch (error: any) {
+    console.error("❌ Ошибка при проверке покрытия:", error.message);
+    console.error(error.stack);
+  }
+}
+
 async function seedParameterDictionary() {
   console.log("🌱 Заполнение ПОЛНОГО справочника параметров...\n");
   console.log("=".repeat(80));
@@ -1100,6 +1382,12 @@ async function seedParameterDictionary() {
 
     for (const param of parameters) {
       try {
+        // Автоматически генерируем sql_expression на основе key и param_type
+        // Это гарантирует использование normalized_parameters вместо main_parameters
+        const sqlExpression = param.param_type === "number"
+          ? `(normalized_parameters->>'${param.key}')::numeric`
+          : `normalized_parameters->>'${param.key}'`;
+
         await pgPool.query(
           `
           INSERT INTO parameter_dictionary (
@@ -1134,7 +1422,7 @@ async function seedParameterDictionary() {
             param.max_value,
             param.enum_values ? JSON.stringify(param.enum_values) : null,
             JSON.stringify(param.aliases ?? []),
-            param.sql_expression,
+            sqlExpression, // Используем автоматически сгенерированное выражение
             param.priority,
           ]
         );
@@ -1198,6 +1486,13 @@ async function seedParameterDictionary() {
 
     console.log("\n✨ Справочник успешно заполнен!");
     console.log("🎯 Система готова к работе в 100% словарном режиме\n");
+
+    // Проверка покрытия параметров из реальных данных БД
+    console.log("=".repeat(80));
+    console.log("🔍 ПРОВЕРКА ПОКРЫТИЯ ПАРАМЕТРОВ ИЗ БД");
+    console.log("=".repeat(80) + "\n");
+    await checkCoverage();
+
   } catch (error: any) {
     console.error("\n❌ Критическая ошибка:", error.message);
     console.error(error.stack);

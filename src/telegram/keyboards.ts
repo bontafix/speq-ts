@@ -5,9 +5,12 @@ export const CALLBACK = {
   reset: "cmd:reset",
   back: "cmd:back",
   help: "cmd:help",
+  showCategories: "menu:categories",
   catPagePrev: "cat_page:prev",
   catPageNext: "cat_page:next",
-  catPickPrefix: "cat:", // cat:<index>
+  catPickPrefix: "cat:", // cat:<categoryIndex>
+  catParamsPrefix: "cat_p:", // cat_p:<categoryIndex>
+  backToMenu: "menu:back",
 
   resPagePrev: "res_page:prev",
   resPageNext: "res_page:next",
@@ -18,12 +21,21 @@ export const CALLBACK = {
   showAllCategories: "act:show_all_categories",
 } as const;
 
+/**
+ * Главное меню после /start
+ */
+export function buildMainMenuKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("📋 Показать категории", CALLBACK.showCategories)],
+  ]);
+}
+
 export function buildCategoriesKeyboard(opts: {
   categories: CategoryOption[];
   page: number;
   pageSize?: number;
 }) {
-  const pageSize = opts.pageSize ?? 10;
+  const pageSize = opts.pageSize ?? 8;
   const total = opts.categories.length;
   const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
   const page = Math.min(Math.max(opts.page, 0), maxPage);
@@ -31,17 +43,22 @@ export function buildCategoriesKeyboard(opts: {
   const start = page * pageSize;
   const slice = opts.categories.slice(start, start + pageSize);
 
+  // Кнопки категорий — по индексу
+  // Каждая строка: [Категория (кол-во)] [Параметры]
   const rows = slice.map((c, i) => [
     Markup.button.callback(`${c.name} (${c.count})`, `${CALLBACK.catPickPrefix}${start + i}`),
+    Markup.button.callback("⚙️ Параметры", `${CALLBACK.catParamsPrefix}${start + i}`),
   ]);
 
+  // Пагинация
   const navRow = [];
-  if (page > 0) navRow.push(Markup.button.callback("◀︎", CALLBACK.catPagePrev));
-  navRow.push(Markup.button.callback(`Стр. ${page + 1}/${maxPage + 1}`, CALLBACK.help));
-  if (page < maxPage) navRow.push(Markup.button.callback("▶︎", CALLBACK.catPageNext));
+  if (page > 0) navRow.push(Markup.button.callback("◀︎ Назад", CALLBACK.catPagePrev));
+  navRow.push(Markup.button.callback(`${page + 1}/${maxPage + 1}`, CALLBACK.help));
+  if (page < maxPage) navRow.push(Markup.button.callback("Вперёд ▶︎", CALLBACK.catPageNext));
   if (navRow.length > 0) rows.push(navRow);
 
-  rows.push([Markup.button.callback("Сброс", CALLBACK.reset)]);
+  // Кнопка "В главное меню"
+  rows.push([Markup.button.callback("🏠 Главное меню", CALLBACK.backToMenu)]);
 
   return Markup.inlineKeyboard(rows);
 }
@@ -103,4 +120,9 @@ export function buildCategorySuggestionKeyboard(opts: { categoryName: string; ca
   ]);
 }
 
-
+export function buildCategoryParamsKeyboard(opts: { categoryIndex: number }) {
+    return Markup.inlineKeyboard([
+        [Markup.button.callback("↩️ К списку категорий", CALLBACK.showCategories)],
+        [Markup.button.callback(`🔍 Искать в этой категории`, `${CALLBACK.catPickPrefix}${opts.categoryIndex}`)]
+    ]);
+}

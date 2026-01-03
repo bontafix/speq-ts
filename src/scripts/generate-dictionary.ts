@@ -3,6 +3,7 @@
 import "dotenv/config";
 import { pgPool } from "../db/pg";
 import { LLMProviderFactory } from "../llm";
+import { ParameterDictionaryService } from "../normalization";
 
 interface ParameterAnalysis {
   key: string;
@@ -255,6 +256,13 @@ async function main() {
   console.log("Генерация справочника параметров через LLM...\n");
   console.log(`Загружено ${analysis.length} параметров из анализа\n`);
 
+  // Загружаем существующий справочник для проверки покрытия
+  console.log("Загрузка существующего справочника...");
+  const dictionaryService = new ParameterDictionaryService();
+  await dictionaryService.loadDictionary();
+  const existingDictionary = dictionaryService.getDictionary();
+  console.log(`Загружено ${existingDictionary.length} параметров из справочника\n`);
+
   // Инициализируем LLM провайдер
   const llmFactory = new LLMProviderFactory();
   const llmHealth = await llmFactory.checkHealth();
@@ -269,6 +277,29 @@ async function main() {
 
   console.log(`Доступные LLM провайдеры: ${availableProviders.join(", ")}`);
   
+  // В этом проекте для chat ВСЕГДА используется groq (жестко зафиксировано в LLMProviderFactory)
+  const chatProviderType = "groq";
+  const isGroqAvailable = availableProviders.includes("groq");
+  
+  if (isGroqAvailable) {
+    console.log(`✅ Используется провайдер для chat: ${chatProviderType} (фиксированный)`);
+  } else {
+    console.log(`❌ Провайдер ${chatProviderType} недоступен! Проверьте GROQ_API_KEY`);
+    console.error("Groq обязателен для chat completion. Укажите GROQ_API_KEY в .env");
+    process.exit(1);
+  }
+  
+  // Получаем модель из env (приоритет: LLM_MODEL_GROQ > LLM_MODEL > дефолт)
+  const groqModel = process.env.LLM_MODEL_GROQ || process.env.LLM_MODEL;
+  const model = groqModel || "llama-3.3-70b-versatile"; // Дефолт для Groq
+  console.log(`📝 Используемая модель: ${model}`);
+  if (groqModel) {
+    console.log(`   (из ${process.env.LLM_MODEL_GROQ ? 'LLM_MODEL_GROQ' : 'LLM_MODEL'})`);
+  } else {
+    console.log(`   (дефолт для Groq)`);
+  }
+  console.log();
+  
   // Создаём провайдер через фабрику (используем метод chat напрямую)
   const llmProvider = {
     chat: async (options: any) => {
@@ -280,11 +311,43 @@ async function main() {
   const minFrequency = parseInt(process.env.MIN_PARAM_FREQUENCY || "2", 10);
   const maxParams = parseInt(process.env.MAX_PARAMS_TO_GENERATE || "60", 10);
 
-  const topParams = analysis
-    .filter((p) => p.frequency >= minFrequency)
+  // Фильтруем параметры: только те, которые еще не покрыты справочником
+  const filteredParams = analysis
+    .filter((p) => {
+      // Проверяем частоту
+      if (p.frequency < minFrequency) {
+        return false;
+      }
+      
+      // Проверяем, покрыт ли параметр справочником
+      const paramDef = dictionaryService.findCanonicalKey(p.key);
+      if (paramDef) {
+        return false; // Параметр уже покрыт, пропускаем
+      }
+      
+      return true; // Параметр не покрыт, нужно обработать
+    })
     .slice(0, maxParams);
 
-  console.log(`Будет обработано ${topParams.length} параметров (минимум ${minFrequency} использований)\n`);
+  const skippedCount = analysis.filter((p) => {
+    if (p.frequency < minFrequency) return false;
+    const paramDef = dictionaryService.findCanonicalKey(p.key);
+    return paramDef !== null;
+  }).length;
+
+  console.log(`Всего параметров в анализе: ${analysis.length}`);
+  console.log(`Параметров с частотой >= ${minFrequency}: ${analysis.filter(p => p.frequency >= minFrequency).length}`);
+  console.log(`Параметров уже покрытых справочником: ${skippedCount}`);
+  console.log(`Будет обработано новых параметров: ${filteredParams.length}\n`);
+
+  if (filteredParams.length === 0) {
+    console.log("✅ Все параметры уже покрыты справочником!");
+    console.log("💡 Если нужно обработать больше параметров, увеличьте MAX_PARAMS_TO_GENERATE");
+    await pgPool.end();
+    return;
+  }
+
+  const topParams = filteredParams;
 
   let success = 0;
   let failed = 0;
@@ -348,16 +411,17 @@ async function main() {
 
     // Увеличенная базовая задержка, чтобы не перегружать LLM
     if (i < topParams.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 15000));
     }
   }
 
   console.log("\n" + "=".repeat(80));
   console.log("РЕЗУЛЬТАТЫ");
   console.log("=".repeat(80));
-  console.log(`Успешно: ${success}`);
+  console.log(`Успешно создано: ${success}`);
   console.log(`Ошибок: ${failed}`);
-  console.log(`Всего: ${topParams.length}`);
+  console.log(`Всего обработано: ${topParams.length}`);
+  console.log(`Пропущено (уже в справочнике): ${skippedCount}`);
 
   if (success > 0) {
     console.log("\n✓ Справочник создан!");
