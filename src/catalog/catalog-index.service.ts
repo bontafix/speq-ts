@@ -1,5 +1,5 @@
 import { pgPool } from "../db/pg";
-import type { CategoryInfo } from "./catalog.types";
+import type { CategoryInfo, ParameterInfo } from "./catalog.types";
 
 /**
  * Индекс каталога для быстрого доступа к статистике
@@ -107,6 +107,71 @@ export class CatalogIndexService {
       return this.index;
     }
     return await this.buildIndex();
+  }
+
+  /**
+   * Получить список параметров для категории
+   */
+  async getCategoryParameters(category: string): Promise<string[]> {
+    try {
+      const result = await pgPool.query(`
+        SELECT DISTINCT jsonb_object_keys(main_parameters) as param
+        FROM equipment
+        WHERE is_active = true 
+          AND category = $1
+          AND main_parameters IS NOT NULL 
+          AND main_parameters != '{}'::jsonb
+        ORDER BY param
+      `, [category]);
+      
+      return result.rows.map(r => r.param);
+    } catch (error) {
+      console.error(`[CatalogIndex] Failed to get parameters for category ${category}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Получить список параметров для категории с количеством оборудования
+   * 
+   * Запрос получает данные из таблицы equipment:
+   * - Извлекает все ключи из JSONB поля main_parameters
+   * - Считает количество записей, где каждый параметр присутствует
+   * - Фильтрует только активное оборудование указанной категории
+   * 
+   * SQL запрос:
+   * 1. Использует jsonb_object_keys() для извлечения всех ключей из main_parameters
+   * 2. Группирует по имени параметра и считает количество записей
+   * 3. Фильтрует по is_active = true и category
+   */
+  async getCategoryParametersWithCount(category: string): Promise<ParameterInfo[]> {
+    try {
+      const result = await pgPool.query(`
+        SELECT 
+          param_name as name,
+          COUNT(*) as count
+        FROM (
+          SELECT 
+            jsonb_object_keys(main_parameters) as param_name,
+            id
+          FROM equipment
+          WHERE is_active = true 
+            AND category = $1
+            AND main_parameters IS NOT NULL 
+            AND main_parameters != '{}'::jsonb
+        ) subquery
+        GROUP BY param_name
+        ORDER BY count DESC, param_name
+      `, [category]);
+      
+      return result.rows.map(r => ({
+        name: r.name,
+        count: parseInt(r.count)
+      }));
+    } catch (error) {
+      console.error(`[CatalogIndex] Failed to get parameters with count for category ${category}:`, error);
+      return [];
+    }
   }
 
   /**
@@ -253,4 +318,3 @@ export class CatalogIndexService {
     }
   }
 }
-

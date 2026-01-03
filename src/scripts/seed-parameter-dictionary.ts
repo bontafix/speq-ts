@@ -286,6 +286,12 @@ async function seedParameterDictionary() {
 
     for (const param of parameters) {
       try {
+        // Автоматически генерируем sql_expression на основе key и param_type
+        // Это гарантирует использование normalized_parameters вместо main_parameters
+        const sqlExpression = param.param_type === "number"
+          ? `(normalized_parameters->>'${param.key}')::numeric`
+          : `normalized_parameters->>'${param.key}'`;
+
         await pgPool.query(
           `
           INSERT INTO parameter_dictionary (
@@ -320,7 +326,7 @@ async function seedParameterDictionary() {
             param.max_value,
             param.enum_values ? JSON.stringify(param.enum_values) : null,
             JSON.stringify(param.aliases ?? []),
-            param.sql_expression,
+            sqlExpression, // Используем автоматически сгенерированное выражение
             param.priority,
           ]
         );

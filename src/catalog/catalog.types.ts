@@ -48,4 +48,9 @@ export interface CategoryInfo {
   count: number;
 }
 
+export interface ParameterInfo {
+  name: string;
+  count: number;
+}
+
 

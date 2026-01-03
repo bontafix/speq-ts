@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "bash",
+      "args": [
+        "/home/boris/dev/speq-ts/scripts/mcp-postgres.sh"
+      ],
+      "env": {}
+    }
+  }
+}
+
