@@ -103,6 +103,9 @@ export class ParameterDictionaryService {
 
   /**
    * Найти canonical key по алиасу
+   * 
+   * Важно: возвращает ТОЛЬКО ОДИН параметр для одного исходного ключа.
+   * Приоритет: точное совпадение > точное совпадение алиаса > частичное совпадение
    */
   findCanonicalKey(rawKey: string): ParameterDictionary | null {
     if (!this.dictionaryLoaded) {
@@ -111,26 +114,48 @@ export class ParameterDictionaryService {
 
     const normalizedKey = rawKey.toLowerCase().trim();
 
+    // Сначала ищем точные совпадения (приоритет выше)
     for (const param of this.dictionary) {
       // Проверяем точное совпадение ключа
       if (param.key.toLowerCase() === normalizedKey) {
         return param;
       }
 
-      // Проверяем алиасы
+      // Проверяем точное совпадение алиаса
       if (
         param.aliases.some(
-          (alias) =>
-            alias.toLowerCase() === normalizedKey ||
-            normalizedKey.includes(alias.toLowerCase()) ||
-            alias.toLowerCase().includes(normalizedKey)
+          (alias) => alias.toLowerCase() === normalizedKey
         )
       ) {
         return param;
       }
     }
 
-    return null;
+    // Затем ищем частичные совпадения (только если нет точных)
+    // Используем приоритет параметра для выбора лучшего совпадения
+    let bestMatch: ParameterDictionary | null = null;
+    let bestPriority = Infinity;
+
+    for (const param of this.dictionary) {
+      // Проверяем частичные совпадения алиасов
+      const hasPartialMatch = param.aliases.some(
+        (alias) => {
+          const aliasLower = alias.toLowerCase();
+          // Частичное совпадение: исходный ключ содержит алиас или алиас содержит исходный ключ
+          return normalizedKey.includes(aliasLower) || aliasLower.includes(normalizedKey);
+        }
+      );
+
+      if (hasPartialMatch) {
+        // Выбираем параметр с наименьшим приоритетом (0 = самый важный)
+        if (param.priority < bestPriority) {
+          bestMatch = param;
+          bestPriority = param.priority;
+        }
+      }
+    }
+
+    return bestMatch;
   }
 
   /**

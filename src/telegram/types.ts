@@ -34,6 +34,9 @@ export interface WizardSession {
   // История чата для LLM
   chatHistory?: ChatMessage[];
 
+  // ID сообщений бота для возможности их удаления
+  messageIds?: number[];
+
   updatedAtMs: number;
 }
 
