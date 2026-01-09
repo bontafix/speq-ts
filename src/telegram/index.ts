@@ -39,6 +39,7 @@ function newSession(telegramId: number): WizardSession {
     categoryOptions: null,
     lastResults: null,
     chatHistory: [],
+    messageIds: [],
     updatedAtMs: Date.now(),
   };
 }
@@ -86,10 +87,58 @@ async function main() {
       kind: "reply",
       payload: text,
     });
-    return await ctx.reply(text, extra);
+    const message = await ctx.reply(text, extra);
+    
+    // Сохраняем message_id в сессию для возможности удаления
+    if (message?.message_id && ctx.from?.id) {
+      const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
+      if (!session.messageIds) {
+        session.messageIds = [];
+      }
+      session.messageIds.push(message.message_id);
+      await sessions.set(session);
+    }
+    
+    return message;
+  }
+
+  /**
+   * Удаляет все предыдущие сообщения бота из чата
+   */
+  async function deletePreviousMessages(ctx: any, telegramId: number) {
+    try {
+      const session = await sessions.get(telegramId);
+      if (!session?.messageIds || session.messageIds.length === 0) {
+        return;
+      }
+
+      const chatId = ctx.chat?.id || ctx.from?.id;
+      if (!chatId) return;
+
+      // Удаляем все сообщения бота
+      const deletePromises = session.messageIds.map((messageId) =>
+        bot.telegram.deleteMessage(chatId, messageId).catch((err: any) => {
+          // Игнорируем ошибки удаления (сообщение уже удалено или недоступно)
+          if (err?.response?.error_code !== 400 && err?.response?.error_code !== 403) {
+            console.warn(`[Telegram] Не удалось удалить сообщение ${messageId}:`, err?.message);
+          }
+        })
+      );
+
+      await Promise.all(deletePromises);
+
+      // Очищаем список messageIds
+      session.messageIds = [];
+      await sessions.set(session);
+    } catch (error: any) {
+      console.error("[Telegram] Ошибка при удалении предыдущих сообщений:", error?.message);
+    }
   }
 
   async function resetToChat(ctx: any, telegramId: number) {
+    // Удаляем все предыдущие сообщения перед показом главного меню
+    await deletePreviousMessages(ctx, telegramId);
+    
     const s = newSession(telegramId);
     await sessions.set(s);
     await reply(ctx, "🔄 Контекст сброшен. Что ищем?", buildMainMenuKeyboard());
@@ -114,6 +163,9 @@ async function main() {
   bot.start(async (ctx) => {
     const telegramId = ctx.from?.id;
     if (!telegramId) return;
+
+    // Удаляем все предыдущие сообщения перед показом главного меню
+    await deletePreviousMessages(ctx, telegramId);
 
     const s = newSession(telegramId);
     await sessions.set(s);
@@ -361,7 +413,25 @@ async function main() {
 
       // Вернуться в главное меню
       if (data === CALLBACK.backToMenu) {
-        await ctx.editMessageText(
+        // Удаляем текущее сообщение (которое содержит кнопки)
+        try {
+          const messageId = (ctx.callbackQuery as any)?.message?.message_id;
+          if (messageId) {
+            const chatId = ctx.chat?.id || ctx.from?.id;
+            if (chatId) {
+              await bot.telegram.deleteMessage(chatId, messageId).catch(() => undefined);
+            }
+          }
+        } catch (e) {
+          // Игнорируем ошибки
+        }
+        
+        // Удаляем все предыдущие сообщения перед показом главного меню
+        await deletePreviousMessages(ctx, telegramId);
+        
+        // Отправляем новое сообщение с главным меню
+        await reply(
+          ctx,
           "🔍 Напишите, что ищете, или выберите категорию:",
           buildMainMenuKeyboard()
         );
