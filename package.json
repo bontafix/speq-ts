@@ -13,6 +13,10 @@
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
     "generate:dictionary": "ts-node src/scripts/generate-dictionary.ts",
     "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",
+    "resize:images": "ts-node src/scripts/resize-images.ts",
+    "webhook:set": "ts-node src/scripts/webhook.ts set",
+    "webhook:delete": "ts-node src/scripts/webhook.ts delete",
+    "webhook:info": "ts-node src/scripts/webhook.ts info",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

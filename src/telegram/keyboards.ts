@@ -19,6 +19,8 @@ export const CALLBACK = {
   resChangeCategory: "act:change_category",
   resBackToResults: "act:back_results",
   showAllCategories: "act:show_all_categories",
+  catResPagePrev: "cat_res_page:prev",
+  catResPageNext: "cat_res_page:next",
 } as const;
 
 /**
@@ -125,4 +127,33 @@ export function buildCategoryParamsKeyboard(opts: { categoryIndex: number }) {
         [Markup.button.callback("↩️ К списку категорий", CALLBACK.showCategories)],
         [Markup.button.callback(`🔍 Искать в этой категории`, `${CALLBACK.catPickPrefix}${opts.categoryIndex}`)]
     ]);
+}
+
+/**
+ * Клавиатура для пагинации результатов категории
+ */
+export function buildCategoryResultsKeyboard(opts: {
+  page: number;
+  totalPages: number;
+  canPrev: boolean;
+  canNext: boolean;
+}) {
+  const rows: any[] = [];
+  
+  const navRow = [];
+  if (opts.canPrev) {
+    navRow.push(Markup.button.callback("◀︎ Назад", CALLBACK.catResPagePrev));
+  }
+  navRow.push(Markup.button.callback(`Стр. ${opts.page + 1}/${opts.totalPages}`, CALLBACK.help));
+  if (opts.canNext) {
+    navRow.push(Markup.button.callback("Вперёд ▶︎", CALLBACK.catResPageNext));
+  }
+  if (navRow.length > 0) {
+    rows.push(navRow);
+  }
+  
+  rows.push([Markup.button.callback("📋 Показать категории", CALLBACK.showCategories)]);
+  rows.push([Markup.button.callback("🏠 Главное меню", CALLBACK.backToMenu)]);
+  
+  return Markup.inlineKeyboard(rows);
 }

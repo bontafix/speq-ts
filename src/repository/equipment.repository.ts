@@ -162,7 +162,7 @@ export class EquipmentRepository {
   /**
    * FTS-поиск по тексту и фильтрам.
    */
-  async fullTextSearch(query: SearchQuery, limit: number): Promise<EquipmentSummary[]> {
+  async fullTextSearch(query: SearchQuery, limit: number, offset: number = 0): Promise<EquipmentSummary[]> {
     const values: any[] = [];
     const whereParts: string[] = ["is_active = true"];
     let rankExpression = "0::float4";
@@ -215,8 +215,9 @@ export class EquipmentRepository {
 
     const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
-    // Безопасное использование limit через параметр
+    // Безопасное использование limit и offset через параметры
     const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
+    const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
 
     const sql = `
       SELECT
@@ -229,17 +230,17 @@ export class EquipmentRepository {
       FROM equipment
       ${whereClause}
       ORDER BY ${rankExpression} DESC, name ASC
-      LIMIT $${values.length + 1}
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}
     `;
 
     if (process.env.DEBUG_SEARCH) {
       console.log('\n--- FTS SQL Log ---');
       console.log('Query:', sql.replace(/\s+/g, ' ').trim());
-      console.log('Params:', values);
+      console.log('Params:', [...values, safeLimit, safeOffset]);
       console.log('-------------------\n');
     }
 
-    const result = await pgPool.query(sql, [...values, safeLimit]);
+    const result = await pgPool.query(sql, [...values, safeLimit, safeOffset]);
     return result.rows;
   }
 
@@ -335,7 +336,8 @@ export class EquipmentRepository {
       brand?: string;
       region?: string;
       parameters?: Record<string, string | number>;
-    }
+    },
+    offset: number = 0
   ): Promise<EquipmentSummary[]> {
     // Валидация embedding для защиты от инъекций и некорректных данных
     if (!this.validateEmbedding(queryEmbedding, 768)) {
@@ -350,7 +352,9 @@ export class EquipmentRepository {
       "embedding IS NOT NULL",
       "is_active = true"
     ];
-    const params: any[] = [embeddingLiteral, limit];
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
+    const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+    const params: any[] = [embeddingLiteral, safeLimit, safeOffset];
     
     if (filters?.category && filters.category.trim()) {
       // Как и в FTS: делаем мягкий матч по подстроке (LLM часто дает "Бульдозер",
@@ -398,7 +402,7 @@ export class EquipmentRepository {
       FROM equipment
       WHERE ${whereParts.join(" AND ")}
       ORDER BY embedding <=> $1::vector
-      LIMIT $2
+      LIMIT $2 OFFSET $3
     `;
 
     try {

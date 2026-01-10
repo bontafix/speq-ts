@@ -63,6 +63,7 @@ export class SearchEngine {
    */
   async search(query: SearchQuery): Promise<CatalogSearchResult> {
     const limit = query.limit ?? 10;
+    const offset = query.offset ?? 0;
 
     // 1. Нормализация параметров
     let normalizedQuery = query;
@@ -94,7 +95,7 @@ export class SearchEngine {
     // 2. Параллельный запуск стратегий
     
     // Стратегия 1: FTS (Точное совпадение слов + Фильтры)
-    const ftsPromise = this.equipmentRepository.fullTextSearch(normalizedQuery, limit);
+    const ftsPromise = this.equipmentRepository.fullTextSearch(normalizedQuery, limit, offset);
 
     // Стратегия 2: Vector (Смысловое совпадение)
     let vectorPromise: Promise<EquipmentSummary[]> = Promise.resolve([]);
@@ -118,7 +119,7 @@ export class SearchEngine {
         if (normalizedQuery.region) filters.region = normalizedQuery.region;
         if (normalizedQuery.parameters) filters.parameters = normalizedQuery.parameters;
         
-        return this.equipmentRepository.vectorSearchWithEmbedding(normalizedQuery.text!, vector, limit, filters);
+        return this.equipmentRepository.vectorSearchWithEmbedding(normalizedQuery.text!, vector, limit, filters, offset);
       });
     }
 

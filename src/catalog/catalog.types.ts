@@ -6,6 +6,7 @@ export interface SearchQuery {
   region?: string;
   parameters?: Record<string, string | number>;
   limit?: number;
+  offset?: number;
 }
 
 export interface EquipmentSummary {

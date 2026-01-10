@@ -9,6 +9,7 @@ import { EquipmentRepository } from "../repository/equipment.repository";
 import { LLMProviderFactory, type ProviderType } from "../llm";
 import type { SearchQuery } from "../catalog";
 import { ParameterDictionaryService } from "../normalization";
+import { handleUpdate, setWebhook, deleteWebhook, getWebhookInfo } from "../telegram";
 
 const PORT = process.env.HTTP_PORT ? Number(process.env.HTTP_PORT) : 3000;
 
@@ -272,6 +273,152 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Эндпоинт для обработки webhook от Telegram (POST)
+  if (method === "POST" && url.pathname === "/telegram/webhook") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", async () => {
+      try {
+        const update = JSON.parse(body);
+        await handleUpdate(update);
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err) {
+        console.error("[HTTP] Ошибка обработки webhook:", err);
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(
+          JSON.stringify(
+            {
+              error: "Ошибка при обработке webhook",
+              details: String(err),
+            },
+            null,
+            2,
+          ),
+        );
+      }
+    });
+    return;
+  }
+
+  // Эндпоинт для установки webhook (POST)
+  if (method === "POST" && url.pathname === "/telegram/webhook/set") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", async () => {
+      try {
+        const data = JSON.parse(body);
+        const { webhookUrl } = data;
+        
+        if (!webhookUrl || typeof webhookUrl !== "string") {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(
+            JSON.stringify(
+              {
+                error: "Укажите webhookUrl в теле запроса",
+              },
+              null,
+              2,
+            ),
+          );
+          return;
+        }
+
+        await setWebhook(webhookUrl);
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(
+          JSON.stringify(
+            {
+              success: true,
+              message: `Webhook установлен: ${webhookUrl}`,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(
+          JSON.stringify(
+            {
+              error: "Ошибка при установке webhook",
+              details: String(err),
+            },
+            null,
+            2,
+          ),
+        );
+      }
+    });
+    return;
+  }
+
+  // Эндпоинт для удаления webhook (POST)
+  if (method === "POST" && url.pathname === "/telegram/webhook/delete") {
+    try {
+      await deleteWebhook();
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(
+        JSON.stringify(
+          {
+            success: true,
+            message: "Webhook удален",
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(
+        JSON.stringify(
+          {
+            error: "Ошибка при удалении webhook",
+            details: String(err),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    return;
+  }
+
+  // Эндпоинт для получения информации о webhook (GET)
+  if (method === "GET" && url.pathname === "/telegram/webhook/info") {
+    try {
+      const info = await getWebhookInfo();
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(JSON.stringify(info, null, 2));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(
+        JSON.stringify(
+          {
+            error: "Ошибка при получении информации о webhook",
+            details: String(err),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    return;
+  }
+
   // Эндпоинт для смены провайдера (POST)
   if (method === "POST" && url.pathname === "/llm/providers/set") {
     let body = "";
@@ -355,7 +502,16 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(
-    `HTTP API запущен на порту ${PORT}. Маршруты: GET /health, GET /search, GET /llm/providers, GET /llm/providers/models?provider=groq, POST /llm/providers/set`,
+    `HTTP API запущен на порту ${PORT}. Маршруты:\n` +
+    `  GET /health\n` +
+    `  GET /search\n` +
+    `  GET /llm/providers\n` +
+    `  GET /llm/providers/models?provider=groq\n` +
+    `  POST /llm/providers/set\n` +
+    `  POST /telegram/webhook (webhook от Telegram)\n` +
+    `  POST /telegram/webhook/set (установка webhook)\n` +
+    `  POST /telegram/webhook/delete (удаление webhook)\n` +
+    `  GET /telegram/webhook/info (информация о webhook)`,
   );
 });
 
