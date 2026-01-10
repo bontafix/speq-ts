@@ -9,7 +9,7 @@ import { CatalogIndexService } from "../catalog/catalog-index.service";
 import { createSessionStore } from "./session.store";
 import type { WizardSession } from "./types";
 import { logIncoming, logOutgoing } from "./telegram.logger";
-import { CALLBACK, buildMainMenuKeyboard, buildCategoriesKeyboard, buildCategoryParamsKeyboard } from "./keyboards";
+import { CALLBACK, buildMainMenuKeyboard, buildCategoriesKeyboard, buildCategoryParamsKeyboard, buildCategoryResultsKeyboard } from "./keyboards";
 
 function requireBotToken(): string {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
@@ -37,6 +37,7 @@ function newSession(telegramId: number): WizardSession {
     paramText: null,
     page: 0,
     categoryOptions: null,
+    categoryResultsPage: 0,
     lastResults: null,
     chatHistory: [],
     messageIds: [],
@@ -44,9 +45,13 @@ function newSession(telegramId: number): WizardSession {
   };
 }
 
-async function main() {
+/**
+ * Инициализирует и настраивает бота со всеми обработчиками
+ * Возвращает экземпляр бота для использования в webhook или polling
+ */
+export async function setupBot() {
   const apiRoot = process.env.TELEGRAM_API_ROOT?.trim();
-  console.log("[Telegram] Запуск процесса бота...");
+  console.log("[Telegram] Инициализация бота...");
   
   // 1. Инициализация AppContainer (как в CLI)
   const app = new AppContainer();
@@ -59,7 +64,9 @@ async function main() {
   await catalogIndex.ensureIndex();
   console.log("[Telegram] CatalogIndex готов.");
 
-  const answerGenerator = new AnswerGenerator();
+  // Инициализируем AnswerGenerator с базовым URL для изображений
+  const imageBaseUrl = process.env.IMAGE_BASE_URL?.trim();
+  const answerGenerator = new AnswerGenerator(undefined, imageBaseUrl);
 
   console.log(`[Telegram] API: ${apiRoot || "https://api.telegram.org"}`);
   const bot = new Telegraf(requireBotToken(), apiRoot ? { telegram: { apiRoot } } : undefined);
@@ -100,6 +107,29 @@ async function main() {
     }
     
     return message;
+  }
+
+  /**
+   * Безопасный ответ на callback_query
+   * Игнорирует ошибки "query is too old" и другие некритичные ошибки
+   */
+  async function safeAnswerCbQuery(ctx: any, text?: string): Promise<void> {
+    try {
+      await ctx.answerCbQuery(text);
+    } catch (error: any) {
+      // Игнорируем ошибки "query is too old" - это нормально для старых запросов
+      const errorMessage = error?.response?.description || error?.message || "";
+      if (
+        errorMessage.includes("query is too old") ||
+        errorMessage.includes("response timeout expired") ||
+        errorMessage.includes("query ID is invalid")
+      ) {
+        // Это нормально - запрос устарел, просто игнорируем
+        return;
+      }
+      // Для других ошибок логируем, но не падаем
+      console.warn(`[Telegram] Ошибка при answerCbQuery:`, errorMessage);
+    }
   }
 
   /**
@@ -268,6 +298,49 @@ async function main() {
           const answerText = answerGenerator.generatePlainText(result.items);
           await reply(ctx, answerText);
 
+          // Отправляем изображения для каждого найденного оборудования
+          for (const item of result.items) {
+            const imageUrl = answerGenerator.getImageUrl(item.id);
+            if (imageUrl) {
+              try {
+                // Отправляем изображение по URL
+                // Формат URL: https://domain.com/speq-images/{id}
+                // Telegram сам загрузит изображение по этой ссылке
+                const caption = `${item.name} (${item.brand}, ${item.category})`;
+                const message = await ctx.replyWithPhoto(imageUrl, { caption });
+                
+                // Сохраняем message_id в сессию
+                if (message?.message_id && ctx.from?.id) {
+                  const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
+                  if (!session.messageIds) {
+                    session.messageIds = [];
+                  }
+                  session.messageIds.push(message.message_id);
+                  await sessions.set(session);
+                }
+              } catch (error: any) {
+                // Обрабатываем ошибку 429 (Too Many Requests) - добавляем задержку
+                const errorMessage = error?.response?.description || error?.message || "";
+                if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
+                  const retryAfter = error?.response?.parameters?.retry_after || 10;
+                  console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
+                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                  // Не повторяем попытку автоматически, просто пропускаем это изображение
+                } else {
+                  // Для других ошибок просто логируем
+                  console.warn(`[Telegram] Не удалось отправить изображение для ${item.id} (URL: ${imageUrl}):`, errorMessage);
+                }
+              }
+            } else {
+              // Логируем, если URL не найден (для отладки)
+              if (!imageBaseUrl) {
+                console.debug(`[Telegram] IMAGE_BASE_URL не задан, изображения не отправляются`);
+              } else {
+                console.debug(`[Telegram] Изображение не найдено для оборудования ${item.id} (локальный файл отсутствует)`);
+              }
+            }
+          }
+
           // 5. Обогащаем контекст результатами
           const summary = result.items.slice(0, 5)
             .map(i => `- ${i.name} (Price: ${i.price}, Brand: ${i.brand}, Params: ${JSON.stringify(i.mainParameters)})`)
@@ -289,7 +362,7 @@ async function main() {
     const data = (ctx.callbackQuery as any)?.data;
     const telegramId = ctx.from?.id;
     if (!telegramId || !data) {
-      await ctx.answerCbQuery().catch(() => undefined);
+      await safeAnswerCbQuery(ctx);
       return;
     }
 
@@ -298,7 +371,7 @@ async function main() {
       if (data === CALLBACK.showCategories) {
         const index = catalogIndex.getIndex();
         if (!index) {
-          await ctx.answerCbQuery("Каталог загружается...");
+          await safeAnswerCbQuery(ctx, "Каталог загружается...");
           return;
         }
 
@@ -314,7 +387,7 @@ async function main() {
           `📋 **Категории оборудования** (${index.totalItems} единиц)\n\nВыберите категорию:`,
           { parse_mode: "Markdown", ...buildCategoriesKeyboard({ categories, page: 0 }) }
         );
-        await ctx.answerCbQuery();
+        await safeAnswerCbQuery(ctx);
         return;
       }
 
@@ -333,7 +406,92 @@ async function main() {
         await ctx.editMessageReplyMarkup(
           buildCategoriesKeyboard({ categories, page: session.page }).reply_markup
         );
-        await ctx.answerCbQuery();
+        await safeAnswerCbQuery(ctx);
+        return;
+      }
+
+      // Пагинация результатов категории
+      if (data === CALLBACK.catResPagePrev || data === CALLBACK.catResPageNext) {
+        let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
+        
+        if (!session.categoryName) {
+          await safeAnswerCbQuery(ctx, "Ошибка: категория не выбрана");
+          return;
+        }
+
+        const categoryName = session.categoryName;
+        const pageSize = parseInt(process.env.CATEGORY_RESULTS_PAGE_SIZE || "5", 10);
+        const safePageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 5;
+        
+        // Обновляем страницу
+        if (data === CALLBACK.catResPagePrev) {
+          session.categoryResultsPage = Math.max(0, session.categoryResultsPage - 1);
+        } else {
+          session.categoryResultsPage = session.categoryResultsPage + 1;
+        }
+        await sessions.set(session);
+
+        await safeAnswerCbQuery(ctx, `Загружаю страницу ${session.categoryResultsPage + 1}...`);
+        await ctx.sendChatAction("typing");
+
+        const offset = session.categoryResultsPage * safePageSize;
+        const result = await app.catalogService.searchEquipment({ 
+          category: categoryName, 
+          limit: safePageSize,
+          offset: offset
+        });
+
+        if (result.total === 0) {
+          await reply(ctx, `❌ В категории «${categoryName}» ничего не найдено.`);
+          return;
+        }
+
+        const totalPages = Math.ceil(result.total / safePageSize);
+        const currentPage = session.categoryResultsPage;
+        const answerText = answerGenerator.generatePlainText(result.items);
+        
+        // Обновляем сообщение с новыми результатами
+        await ctx.editMessageText(
+          `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})\n\n${answerText}`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: buildCategoryResultsKeyboard({
+              page: currentPage,
+              totalPages: totalPages,
+              canPrev: currentPage > 0,
+              canNext: currentPage < totalPages - 1
+            }).reply_markup
+          }
+        );
+
+        // Отправляем изображения для текущей страницы
+        for (const item of result.items) {
+          const imageUrl = answerGenerator.getImageUrl(item.id);
+          if (imageUrl) {
+            try {
+              const caption = `${item.name} (${item.brand}, ${item.category})`;
+              const message = await ctx.replyWithPhoto(imageUrl, { caption });
+              
+              if (message?.message_id && ctx.from?.id) {
+                const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
+                if (!session.messageIds) {
+                  session.messageIds = [];
+                }
+                session.messageIds.push(message.message_id);
+                await sessions.set(session);
+              }
+            } catch (error: any) {
+              const errorMessage = error?.response?.description || error?.message || "";
+              if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
+                const retryAfter = error?.response?.parameters?.retry_after || 10;
+                console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+              } else {
+                console.warn(`[Telegram] Не удалось отправить изображение для ${item.id}:`, errorMessage);
+              }
+            }
+          }
+        }
         return;
       }
 
@@ -344,12 +502,12 @@ async function main() {
         
         const categoryOption = session.categoryOptions?.[catIndex];
         if (!categoryOption) {
-           await ctx.answerCbQuery("Ошибка: категория не найдена (устаревшее меню?)");
+           await safeAnswerCbQuery(ctx, "Ошибка: категория не найдена (устаревшее меню?)");
            return;
         }
 
         const categoryName = categoryOption.name;
-        await ctx.answerCbQuery(`Загружаю параметры...`);
+        await safeAnswerCbQuery(ctx, `Загружаю параметры...`);
         
         // Получаем параметры с количеством оборудования
         const paramsWithCount = await catalogIndex.getCategoryParametersWithCount(categoryName);
@@ -380,34 +538,101 @@ async function main() {
         
         const categoryOption = session.categoryOptions?.[catIndex];
         if (!categoryOption) {
-           await ctx.answerCbQuery("Ошибка: категория не найдена (устаревшее меню?)");
+           await safeAnswerCbQuery(ctx, "Ошибка: категория не найдена (устаревшее меню?)");
            return;
         }
 
         const categoryName = categoryOption.name;
         
-        await ctx.answerCbQuery(`Ищу: ${categoryName}...`);
+        // Сбрасываем страницу результатов при выборе новой категории
+        session.categoryName = categoryName;
+        session.categoryResultsPage = 0;
+        await sessions.set(session);
+        
+        await safeAnswerCbQuery(ctx, `Ищу: ${categoryName}...`);
         await ctx.sendChatAction("typing");
 
-        // Поиск по категории
+        // Получаем размер страницы из env (по умолчанию 5)
+        const pageSize = parseInt(process.env.CATEGORY_RESULTS_PAGE_SIZE || "5", 10);
+        const safePageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 5;
+        const offset = session.categoryResultsPage * safePageSize;
+
+        // Поиск по категории с пагинацией
         const result = await app.catalogService.searchEquipment({ 
           category: categoryName, 
-          limit: 10 
+          limit: safePageSize,
+          offset: offset
         });
 
         if (result.total === 0) {
           await reply(ctx, `❌ В категории «${categoryName}» ничего не найдено.`);
+          await reply(
+            ctx, 
+            "Напишите уточнение или выберите действие:",
+            buildMainMenuKeyboard()
+          );
         } else {
-          await reply(ctx, `✅ **${categoryName}** — найдено: ${result.total}`, { parse_mode: "Markdown" });
+          const totalPages = Math.ceil(result.total / safePageSize);
+          const currentPage = session.categoryResultsPage;
+          
+          await reply(ctx, `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`, { parse_mode: "Markdown" });
           const answerText = answerGenerator.generatePlainText(result.items);
-          await reply(ctx, answerText);
-        }
+          
+          // Отправляем текст с клавиатурой пагинации
+          await reply(
+            ctx, 
+            answerText,
+            buildCategoryResultsKeyboard({
+              page: currentPage,
+              totalPages: totalPages,
+              canPrev: currentPage > 0,
+              canNext: currentPage < totalPages - 1
+            })
+          );
 
-        await reply(
-          ctx, 
-          "Напишите уточнение или выберите действие:",
-          buildMainMenuKeyboard()
-        );
+          // Отправляем изображения для каждого найденного оборудования на текущей странице
+          for (const item of result.items) {
+            const imageUrl = answerGenerator.getImageUrl(item.id);
+            if (imageUrl) {
+              try {
+                // Отправляем изображение по URL
+                // Формат URL: https://domain.com/speq-images/{id}
+                // Telegram сам загрузит изображение по этой ссылке
+                const caption = `${item.name} (${item.brand}, ${item.category})`;
+                const message = await ctx.replyWithPhoto(imageUrl, { caption });
+                
+                // Сохраняем message_id в сессию
+                if (message?.message_id && ctx.from?.id) {
+                  const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
+                  if (!session.messageIds) {
+                    session.messageIds = [];
+                  }
+                  session.messageIds.push(message.message_id);
+                  await sessions.set(session);
+                }
+              } catch (error: any) {
+                // Обрабатываем ошибку 429 (Too Many Requests) - добавляем задержку
+                const errorMessage = error?.response?.description || error?.message || "";
+                if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
+                  const retryAfter = error?.response?.parameters?.retry_after || 10;
+                  console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
+                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                  // Не повторяем попытку автоматически, просто пропускаем это изображение
+                } else {
+                  // Для других ошибок просто логируем
+                  console.warn(`[Telegram] Не удалось отправить изображение для ${item.id} (URL: ${imageUrl}):`, errorMessage);
+                }
+              }
+            } else {
+              // Логируем, если URL не найден (для отладки)
+              if (!imageBaseUrl) {
+                console.debug(`[Telegram] IMAGE_BASE_URL не задан, изображения не отправляются`);
+              } else {
+                console.debug(`[Telegram] Изображение не найдено для оборудования ${item.id} (локальный файл отсутствует)`);
+              }
+            }
+          }
+        }
         return;
       }
 
@@ -435,25 +660,25 @@ async function main() {
           "🔍 Напишите, что ищете, или выберите категорию:",
           buildMainMenuKeyboard()
         );
-        await ctx.answerCbQuery();
+        await safeAnswerCbQuery(ctx);
         return;
       }
 
       // Сброс
       if (data === CALLBACK.reset) {
         await resetToChat(ctx, telegramId);
-        await ctx.answerCbQuery("Контекст сброшен");
+        await safeAnswerCbQuery(ctx, "Контекст сброшен");
         return;
       }
 
-      await ctx.answerCbQuery();
+      await safeAnswerCbQuery(ctx);
     } catch (error: any) {
       console.error("[Telegram] Callback error:", error);
-      await ctx.answerCbQuery("Ошибка").catch(() => undefined);
+      await safeAnswerCbQuery(ctx, "Ошибка");
     }
   });
 
-  // 1. Установка команд меню
+  // Установка команд меню
   console.log("[Telegram] Настройка команд меню...");
   await bot.telegram.setMyCommands([
     { command: "start", description: "Начать диалог / Сброс" },
@@ -462,26 +687,116 @@ async function main() {
     { command: "help", description: "Справка" },
   ]);
 
-  // Проверка и запуск
+  // Проверка Telegram API
   console.log("[Telegram] Проверка Telegram API (getMe)...");
   try {
     const me = await withTimeout(bot.telegram.getMe(), 10000, "telegram.getMe");
     console.log(`✅ [Telegram] Bot: @${me.username || "unknown"} (id=${me.id})`);
   } catch (e: any) {
     console.error("[Telegram] Не удалось проверить getMe:", e?.message);
-    process.exit(1);
+    throw e; // Пробрасываем ошибку вместо process.exit
   }
 
-  console.log("[Telegram] Запускаю polling...");
-  bot.launch().then(() => {
-    console.log("✅ [Telegram] Polling запущен — бот работает");
-  }).catch((e: any) => {
-    console.error("[Telegram] Ошибка bot.launch():", e?.message);
-    process.exit(1);
-  });
-
-  process.once("SIGINT", () => bot.stop("SIGINT"));
-  process.once("SIGTERM", () => bot.stop("SIGTERM"));
+  return bot;
 }
 
-void main();
+/**
+ * Устанавливает webhook для бота
+ * @param webhookUrl - Полный URL для webhook (например, https://example.com/telegram/webhook)
+ */
+export async function setWebhook(webhookUrl: string): Promise<void> {
+  const token = requireBotToken();
+  const apiRoot = process.env.TELEGRAM_API_ROOT?.trim();
+  const bot = new Telegraf(token, apiRoot ? { telegram: { apiRoot } } : undefined);
+  
+  try {
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log(`✅ [Telegram] Webhook установлен: ${webhookUrl}`);
+  } catch (error: any) {
+    console.error(`[Telegram] Ошибка установки webhook:`, error?.message);
+    throw error;
+  }
+}
+
+/**
+ * Удаляет webhook (возвращает бота к polling)
+ */
+export async function deleteWebhook(): Promise<void> {
+  const token = requireBotToken();
+  const apiRoot = process.env.TELEGRAM_API_ROOT?.trim();
+  const bot = new Telegraf(token, apiRoot ? { telegram: { apiRoot } } : undefined);
+  
+  try {
+    await bot.telegram.deleteWebhook();
+    console.log(`✅ [Telegram] Webhook удален`);
+  } catch (error: any) {
+    console.error(`[Telegram] Ошибка удаления webhook:`, error?.message);
+    throw error;
+  }
+}
+
+/**
+ * Получает информацию о текущем webhook
+ */
+export async function getWebhookInfo(): Promise<any> {
+  const token = requireBotToken();
+  const apiRoot = process.env.TELEGRAM_API_ROOT?.trim();
+  const bot = new Telegraf(token, apiRoot ? { telegram: { apiRoot } } : undefined);
+  
+  try {
+    const info = await bot.telegram.getWebhookInfo();
+    return info;
+  } catch (error: any) {
+    console.error(`[Telegram] Ошибка получения информации о webhook:`, error?.message);
+    throw error;
+  }
+}
+
+/**
+ * Обработчик обновлений для webhook
+ * Используется в HTTP сервере для обработки POST запросов от Telegram
+ */
+let botInstance: Telegraf | null = null;
+
+export async function getBotInstance(): Promise<Telegraf> {
+  if (!botInstance) {
+    botInstance = await setupBot();
+  }
+  return botInstance;
+}
+
+/**
+ * Обрабатывает обновление от Telegram (для webhook)
+ */
+export async function handleUpdate(update: any): Promise<void> {
+  const bot = await getBotInstance();
+  await bot.handleUpdate(update);
+}
+
+/**
+ * Запускает бота в режиме polling (для обратной совместимости)
+ */
+async function main() {
+  try {
+    const bot = await setupBot();
+
+    console.log("[Telegram] Запускаю polling...");
+    bot.launch().then(() => {
+      console.log("✅ [Telegram] Polling запущен — бот работает");
+    }).catch((e: any) => {
+      console.error("[Telegram] Ошибка bot.launch():", e?.message);
+      process.exit(1);
+    });
+
+    process.once("SIGINT", () => bot.stop("SIGINT"));
+    process.once("SIGTERM", () => bot.stop("SIGTERM"));
+  } catch (e: any) {
+    console.error("[Telegram] Ошибка инициализации бота:", e?.message);
+    process.exit(1);
+  }
+}
+
+// Запускаем polling только если файл запущен напрямую
+if (require.main === module) {
+  void main();
+}

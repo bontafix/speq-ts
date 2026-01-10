@@ -28,6 +28,9 @@ export interface WizardSession {
   // Снапшот категорий, чтобы callback_data мог ссылаться на индекс.
   categoryOptions: CategoryOption[] | null;
 
+  // Текущая страница результатов категории
+  categoryResultsPage: number;
+
   // В следующих итерациях сюда положим lastResults[] для кнопок "Подробнее"
   lastResults: Array<{ id: string }> | null;
   
