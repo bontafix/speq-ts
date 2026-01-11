@@ -11,6 +11,7 @@ import { createSessionStore } from "./session.store";
 import type { WizardSession } from "./types";
 import { logIncoming, logOutgoing } from "./telegram.logger";
 import { CALLBACK, buildMainMenuKeyboard, buildCategoriesKeyboard, buildCategoryParamsKeyboard, buildCategoryResultsKeyboard } from "./keyboards";
+import { formatCategoryEquipmentPhotoCaption, formatCategoryEquipmentText, refreshParamsConfig } from "./view.format";
 
 function requireBotToken(): string {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
@@ -128,7 +129,7 @@ export async function setupBot() {
       if (imageUrl) {
         // Отправляем фото с полной подписью
         try {
-          const caption = answerGenerator.formatPhotoCaption(item, index);
+          const caption = formatCategoryEquipmentPhotoCaption(item, index);
           const message = await ctx.replyWithPhoto(imageUrl, { caption });
           
           // Сохраняем message_id в сессию
@@ -155,7 +156,7 @@ export async function setupBot() {
         }
       } else {
         // Для оборудования без фото отправляем текстовое сообщение
-        const text = answerGenerator.formatItem(item, index, false);
+        const text = formatCategoryEquipmentText(item, index);
         try {
           const message = await reply(ctx, text);
           // message_id уже сохранен в функции reply
@@ -223,6 +224,9 @@ export async function setupBot() {
   }
 
   async function resetToChat(ctx: any, telegramId: number) {
+    // Перечитываем конфигурацию параметров при сбросе
+    refreshParamsConfig();
+    
     // Удаляем все предыдущие сообщения перед показом главного меню
     await deletePreviousMessages(ctx, telegramId);
     
@@ -250,6 +254,9 @@ export async function setupBot() {
   bot.start(async (ctx) => {
     const telegramId = ctx.from?.id;
     if (!telegramId) return;
+
+    // Перечитываем конфигурацию параметров при перезапуске бота
+    refreshParamsConfig();
 
     // Удаляем все предыдущие сообщения перед показом главного меню
     await deletePreviousMessages(ctx, telegramId);
