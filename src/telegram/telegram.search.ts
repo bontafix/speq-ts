@@ -24,11 +24,11 @@ export async function searchInCategory(params: TelegramSearchParams): Promise<Te
   const like = `%${queryText}%`;
 
   const where = `
-    WHERE is_active = true
-      AND category = $1
+    WHERE e.is_active = true
+      AND e.category = $1
       AND (
-        coalesce(description, '') ILIKE $2
-        OR coalesce(main_parameters::text, '') ILIKE $2
+        coalesce(e.description, '') ILIKE $2
+        OR coalesce(e.main_parameters::text, '') ILIKE $2
       )
   `;
 
@@ -36,7 +36,8 @@ export async function searchInCategory(params: TelegramSearchParams): Promise<Te
     pgPool.query<{ total: string }>(
       `
         SELECT COUNT(*)::text AS total
-        FROM equipment
+        FROM equipment e
+        INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
         ${where}
       `,
       [categoryName, like],
@@ -44,15 +45,16 @@ export async function searchInCategory(params: TelegramSearchParams): Promise<Te
     pgPool.query<EquipmentListItem>(
       `
         SELECT
-          id::text AS id,
-          name,
-          category,
-          brand,
-          description,
-          main_parameters AS "mainParameters"
-        FROM equipment
+          e.id::text AS id,
+          e.name,
+          e.category,
+          e.brand,
+          e.description,
+          e.main_parameters AS "mainParameters"
+        FROM equipment e
+        INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
         ${where}
-        ORDER BY name ASC
+        ORDER BY e.name ASC
         LIMIT $3 OFFSET $4
       `,
       [categoryName, like, limit, offset],
@@ -69,15 +71,16 @@ export async function getEquipmentCardById(id: string): Promise<EquipmentListIte
   const res = await pgPool.query<EquipmentListItem>(
     `
       SELECT
-        id::text AS id,
-        name,
-        category,
-        brand,
-        description,
-        main_parameters AS "mainParameters"
-      FROM equipment
-      WHERE is_active = true
-        AND id::text = $1
+        e.id::text AS id,
+        e.name,
+        e.category,
+        e.brand,
+        e.description,
+        e.main_parameters AS "mainParameters"
+      FROM equipment e
+      INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+      WHERE e.is_active = true
+        AND e.id::text = $1
       LIMIT 1
     `,
     [id],

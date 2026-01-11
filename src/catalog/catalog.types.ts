@@ -54,4 +54,27 @@ export interface ParameterInfo {
   count: number;
 }
 
+/**
+ * Сущность категории с поддержкой иерархии
+ */
+export interface Category {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * Сущность бренда
+ */
+export interface Brand {
+  id: number;
+  name: string;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
 

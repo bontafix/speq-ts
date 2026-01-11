@@ -124,8 +124,9 @@ export function buildCategorySuggestionKeyboard(opts: { categoryName: string; ca
 
 export function buildCategoryParamsKeyboard(opts: { categoryIndex: number }) {
     return Markup.inlineKeyboard([
+        [Markup.button.callback(`🔍 Искать в этой категории`, `${CALLBACK.catPickPrefix}${opts.categoryIndex}`)],
         [Markup.button.callback("↩️ К списку категорий", CALLBACK.showCategories)],
-        [Markup.button.callback(`🔍 Искать в этой категории`, `${CALLBACK.catPickPrefix}${opts.categoryIndex}`)]
+        [Markup.button.callback("🏠 Главное меню", CALLBACK.backToMenu)]
     ]);
 }
 

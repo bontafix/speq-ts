@@ -164,15 +164,15 @@ export class EquipmentRepository {
    */
   async fullTextSearch(query: SearchQuery, limit: number, offset: number = 0): Promise<EquipmentSummary[]> {
     const values: any[] = [];
-    const whereParts: string[] = ["is_active = true"];
+    const whereParts: string[] = ["e.is_active = true"];
     let rankExpression = "0::float4";
 
     // Текстовый поиск через tsvector-колонку search_vector
     if (query.text && query.text.trim()) {
       values.push(query.text.trim());
       const placeholder = `$${values.length}`;
-      whereParts.push(`search_vector @@ plainto_tsquery('russian', ${placeholder})`);
-      rankExpression = `ts_rank(search_vector, plainto_tsquery('russian', ${placeholder}))`;
+      whereParts.push(`e.search_vector @@ plainto_tsquery('russian', ${placeholder})`);
+      rankExpression = `ts_rank(e.search_vector, plainto_tsquery('russian', ${placeholder}))`;
     }
 
     if (query.category && query.category.trim()) {
@@ -180,15 +180,15 @@ export class EquipmentRepository {
       // тогда как в БД категория может быть "Краны"/"Автокраны"/"Гусеничные краны".
       // Делаем мягкий матч по подстроке (case-insensitive).
       values.push(`%${query.category.trim()}%`);
-      whereParts.push(`category ILIKE $${values.length}`);
+      whereParts.push(`e.category ILIKE $${values.length}`);
     }
     if (query.brand && query.brand.trim()) {
       values.push(query.brand.trim());
-      whereParts.push(`brand = $${values.length}`);
+      whereParts.push(`e.brand = $${values.length}`);
     }
     if (query.region && query.region.trim()) {
       values.push(query.region.trim());
-      whereParts.push(`region = $${values.length}`);
+      whereParts.push(`e.region = $${values.length}`);
     }
 
     // Обработка параметров из main_parameters (JSONB)
@@ -208,7 +208,7 @@ export class EquipmentRepository {
         
       // Используем normalized_parameters для быстрого поиска по canonical параметрам
         whereParts.push(
-        `(normalized_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`
+        `(e.normalized_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`
         );
       }
     }
@@ -221,15 +221,16 @@ export class EquipmentRepository {
 
     const sql = `
       SELECT
-        id::text AS id,
-        name,
-        category,
-        brand,
-        price,
-        main_parameters AS "mainParameters"
-      FROM equipment
+        e.id::text AS id,
+        e.name,
+        e.category,
+        e.brand,
+        e.price,
+        e.main_parameters AS "mainParameters"
+      FROM equipment e
+      INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
       ${whereClause}
-      ORDER BY ${rankExpression} DESC, name ASC
+      ORDER BY ${rankExpression} DESC, e.name ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
     `;
 
@@ -349,8 +350,8 @@ export class EquipmentRepository {
     
     // Формируем дополнительные WHERE условия
     const whereParts: string[] = [
-      "embedding IS NOT NULL",
-      "is_active = true"
+      "e.embedding IS NOT NULL",
+      "e.is_active = true"
     ];
     const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
     const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
@@ -360,17 +361,17 @@ export class EquipmentRepository {
       // Как и в FTS: делаем мягкий матч по подстроке (LLM часто дает "Бульдозер",
       // а в БД может быть "Бульдозеры"/"Колесные бульдозеры" и т.п.)
       params.push(`%${filters.category.trim()}%`);
-      whereParts.push(`category ILIKE $${params.length}`);
+      whereParts.push(`e.category ILIKE $${params.length}`);
     }
     
     if (filters?.brand && filters.brand.trim()) {
       params.push(filters.brand.trim());
-      whereParts.push(`brand = $${params.length}`);
+      whereParts.push(`e.brand = $${params.length}`);
     }
     
     if (filters?.region && filters.region.trim()) {
       params.push(filters.region.trim());
-      whereParts.push(`region = $${params.length}`);
+      whereParts.push(`e.region = $${params.length}`);
     }
     
     // Обработка параметров (JSONB)
@@ -385,23 +386,24 @@ export class EquipmentRepository {
         params.push(paramKey, conditionValue);
         // Используем normalized_parameters для быстрого поиска по canonical параметрам
         whereParts.push(
-          `(normalized_parameters->>$${params.length - 1})${sqlCast} ${operator} $${params.length}`
+          `(e.normalized_parameters->>$${params.length - 1})${sqlCast} ${operator} $${params.length}`
         );
       }
     }
 
     const sql = `
       SELECT
-        id::text AS id,
-        name,
-        category,
-        brand,
-        price,
-        main_parameters AS "mainParameters",
-        1 - (embedding <=> $1::vector) AS similarity
-      FROM equipment
+        e.id::text AS id,
+        e.name,
+        e.category,
+        e.brand,
+        e.price,
+        e.main_parameters AS "mainParameters",
+        1 - (e.embedding <=> $1::vector) AS similarity
+      FROM equipment e
+      INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
       WHERE ${whereParts.join(" AND ")}
-      ORDER BY embedding <=> $1::vector
+      ORDER BY e.embedding <=> $1::vector
       LIMIT $2 OFFSET $3
     `;
 
@@ -429,20 +431,21 @@ export class EquipmentRepository {
   async findWithoutEmbedding(limit: number): Promise<EquipmentForEmbedding[]> {
     const sql = `
       SELECT
-        id::text AS id,
+        e.id::text AS id,
         trim(
           concat_ws(
             ' ',
-            name,
-            category,
-            brand,
-            region
+            e.name,
+            e.category,
+            e.brand,
+            e.region
           )
         ) AS "textToEmbed"
-      FROM equipment
-      WHERE embedding IS NULL
-        AND is_active = true
-      ORDER BY id
+      FROM equipment e
+      INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+      WHERE e.embedding IS NULL
+        AND e.is_active = true
+      ORDER BY e.id
       LIMIT $1
     `;
 
