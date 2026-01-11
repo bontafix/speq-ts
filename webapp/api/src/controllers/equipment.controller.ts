@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
-import { pgPool } from "../../../src/db/pg";
+// Используем абсолютный путь от корня проекта
+import { pgPool } from "../../../../src/db/pg";
 
 /**
  * @swagger
@@ -104,7 +105,7 @@ export async function getEquipmentById(req: Request, res: Response): Promise<voi
       [id],
     );
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0 || !result.rows[0]) {
       res.status(404).json({ error: "Equipment not found" });
       return;
     }

@@ -18,6 +18,24 @@ const app = express();
 // Middleware для парсинга JSON
 app.use(express.json());
 
+// Middleware для логирования запросов (после парсинга JSON)
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  const bodyStr = req.method === "POST" && req.body 
+    ? JSON.stringify(req.body).substring(0, 200) 
+    : undefined;
+  
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
+    query: req.query,
+    body: bodyStr,
+    headers: {
+      host: req.headers.host,
+      "x-forwarded-for": req.headers["x-forwarded-for"],
+      "x-real-ip": req.headers["x-real-ip"],
+    },
+  });
+  next();
+});
+
 const llmFactory = new LLMProviderFactory();
 const repository = new EquipmentRepository();
 
@@ -196,8 +214,10 @@ app.get("/llm/providers/models", async (req: Request, res: Response) => {
 
 // Telegram webhook endpoint
 app.post("/telegram/webhook", async (req: Request, res: Response) => {
+  console.log("[Webhook] Получен запрос от Telegram");
   try {
     await handleUpdate(req.body);
+    console.log("[Webhook] Обработка завершена успешно");
     res.status(200).json({ ok: true });
   } catch (err) {
     console.error("[HTTP] Ошибка обработки webhook:", err);

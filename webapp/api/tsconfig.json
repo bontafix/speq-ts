@@ -7,8 +7,12 @@
     "target": "es2020",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": "../../",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../../src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

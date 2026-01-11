@@ -5,7 +5,8 @@ import swaggerUi from "swagger-ui-express";
 import swaggerJsdoc from "swagger-jsdoc";
 import path from "path";
 import { equipmentRouter } from "./routes/equipment.routes";
-import { checkDatabaseHealth } from "../../src/db/pg";
+// Используем абсолютный путь от корня проекта
+import { checkDatabaseHealth } from "../../../src/db/pg";
 
 const app = express();
 const PORT = process.env.WEBAPP_API_PORT ? parseInt(process.env.WEBAPP_API_PORT, 10) : 3001;
@@ -41,6 +42,16 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Health check
 app.get("/health", async (req, res) => {
+  const dbHealth = await checkDatabaseHealth();
+  res.json({
+    status: "ok",
+    database: dbHealth,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Health check также доступен через /api/health
+app.get("/api/health", async (req, res) => {
   const dbHealth = await checkDatabaseHealth();
   res.json({
     status: "ok",

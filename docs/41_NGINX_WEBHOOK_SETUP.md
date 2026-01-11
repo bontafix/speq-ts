@@ -54,8 +54,10 @@ server {
     # ... существующие location блоки для /bot1, /bot2 и т.д. ...
     
     # Добавьте этот блок для speq-bot
+    # ВАЖНО: завершающий слеш в proxy_pass убирает префикс /speq-bot из пути
+    # Запрос /speq-bot/telegram/webhook станет /telegram/webhook на бэкенде
     location /speq-bot {
-        proxy_pass http://127.0.0.1:7504;
+        proxy_pass http://127.0.0.1:7504/;
         proxy_http_version 1.1;
         
         proxy_set_header Host $host;
@@ -77,6 +79,7 @@ server {
     }
     
     # Опционально: отдельная настройка для webhook endpoint
+    # Примечание: этот блок не обязателен, если основной location /speq-bot настроен правильно
     location /speq-bot/telegram/webhook {
         proxy_pass http://127.0.0.1:7504/telegram/webhook;
         proxy_http_version 1.1;
@@ -326,8 +329,9 @@ server {
     }
     
     # Speq Bot
+    # ВАЖНО: завершающий слеш в proxy_pass убирает префикс /speq-bot из пути
     location /speq-bot {
-        proxy_pass http://127.0.0.1:7504;
+        proxy_pass http://127.0.0.1:7504/;
         proxy_http_version 1.1;
         
         proxy_set_header Host $host;
