@@ -11,6 +11,10 @@
     "embed:equipment": "ts-node src/worker/embed-equipment.ts",
     "serve": "ts-node src/http/server.ts",
     "serve:dev": "nodemon --watch src --ext ts --signal SIGTERM --exec \"ts-node src/http/server.ts\"",
+    "webapp:api": "ts-node webapp/api/src/server.ts",
+    "webapp:api:dev": "nodemon --watch webapp/api/src --ext ts --signal SIGTERM --exec \"ts-node webapp/api/src/server.ts\"",
+    "webapp:dev": "cd webapp/frontend && npm run dev",
+    "webapp:build": "cd webapp/frontend && npm run build",
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
     "generate:dictionary": "ts-node src/scripts/generate-dictionary.ts",
     "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",
@@ -32,26 +36,32 @@
     "url": "https://github.com/bontafix/speq-ts/issues"
   },
   "homepage": "https://github.com/bontafix/speq-ts#readme",
-  "devDependencies": {
-    "@modelcontextprotocol/server-postgres": "^0.6.2",
-    "@types/express": "^5.0.6",
-    "@types/fs-extra": "^11.0.4",
-    "@types/node": "^25.0.3",
-    "@types/pg": "^8.16.0",
-    "nodemon": "^3.1.11",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
-  },
   "dependencies": {
     "axios": "^1.13.2",
     "chalk": "^4.1.2",
     "commander": "^14.0.2",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "fs-extra": "^11.3.3",
     "groq-sdk": "^0.3.3",
     "pg": "^8.16.3",
     "sharp": "^0.34.5",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/server-postgres": "^0.6.2",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.6",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^25.0.3",
+    "@types/pg": "^8.16.0",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.6",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
