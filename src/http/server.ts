@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import "dotenv/config";
-import http from "http";
+import express, { type Request, type Response, type NextFunction } from "express";
 import { pgPool } from "../db/pg";
 import { CatalogService } from "../catalog";
 import { SearchEngine } from "../search";
@@ -12,6 +12,11 @@ import { ParameterDictionaryService } from "../normalization";
 import { handleUpdate, setWebhook, deleteWebhook, getWebhookInfo } from "../telegram";
 
 const PORT = process.env.HTTP_PORT ? Number(process.env.HTTP_PORT) : 3000;
+
+const app = express();
+
+// Middleware для парсинга JSON
+app.use(express.json());
 
 const llmFactory = new LLMProviderFactory();
 const repository = new EquipmentRepository();
@@ -62,24 +67,23 @@ async function getHealth() {
   };
 }
 
-function parseSearchQuery(url: URL): SearchQuery {
-  const params = url.searchParams;
-  const limitParam = params.get("limit");
+function parseSearchQuery(req: Request): SearchQuery {
+  const limitParam = req.query.limit;
   const limit = limitParam ? Number(limitParam) : undefined;
 
   const query: SearchQuery = {};
 
-  const text = params.get("text");
-  if (text) query.text = text;
+  const text = req.query.text;
+  if (text && typeof text === "string") query.text = text;
 
-  const category = params.get("category");
-  if (category) query.category = category;
+  const category = req.query.category;
+  if (category && typeof category === "string") query.category = category;
 
-  const brand = params.get("brand");
-  if (brand) query.brand = brand;
+  const brand = req.query.brand;
+  if (brand && typeof brand === "string") query.brand = brand;
 
-  const region = params.get("region");
-  if (region) query.region = region;
+  const region = req.query.region;
+  if (region && typeof region === "string") query.region = region;
 
   if (limit !== undefined && !Number.isNaN(limit)) {
     query.limit = limit;
@@ -88,418 +92,229 @@ function parseSearchQuery(url: URL): SearchQuery {
   return query;
 }
 
-const server = http.createServer(async (req, res) => {
-  const method = req.method ?? "GET";
-  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-
-  if (method === "GET" && url.pathname === "/health") {
-    const health = await getHealth();
-    const body = JSON.stringify(health, null, 2);
-    res.statusCode = health.status === "ok" ? 200 : 200;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(body);
-    return;
-  }
-
-  if (method === "GET" && url.pathname === "/search") {
-    const query = parseSearchQuery(url);
-    if (!query.text && !query.category && !query.brand) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error:
-              "Укажите хотя бы один из параметров: text, category, brand (опционально: region, limit).",
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
-
-    try {
-      const result = await catalogService.searchEquipment(query);
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(JSON.stringify(result, null, 2));
-    } catch (err) {
-      res.statusCode = 500;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error: "Ошибка при выполнении поиска",
-            details: String(err),
-          },
-          null,
-          2,
-        ),
-      );
-    }
-    return;
-  }
-
-  // Эндпоинт для получения информации о провайдерах
-  if (method === "GET" && url.pathname === "/llm/providers") {
-    try {
-      const health = await llmFactory.checkHealth();
-      const config = llmFactory.getConfig();
-      const available = llmFactory.getAvailableProviders();
-
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            available,
-            health,
-            config: {
-              chatProvider: config.chatProvider,
-              embeddingsProvider: config.embeddingsProvider,
-              fallbackProviders: config.fallbackProviders,
-            },
-          },
-          null,
-          2,
-        ),
-      );
-    } catch (err) {
-      res.statusCode = 500;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error: "Ошибка при получении информации о провайдерах",
-            details: String(err),
-          },
-          null,
-          2,
-        ),
-      );
-    }
-    return;
-  }
-
-  // Эндпоинт для получения списка моделей провайдера
-  if (method === "GET" && url.pathname === "/llm/providers/models") {
-    const providerType = url.searchParams.get("provider") as ProviderType | null;
-    
-    if (!providerType) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error: "Укажите параметр provider (ollama, groq, openai)",
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
-
-    try {
-      const provider = llmFactory.getProvider(providerType);
-      if (!provider) {
-        res.statusCode = 404;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              error: `Провайдер ${providerType} не инициализирован`,
-            },
-            null,
-            2,
-          ),
-        );
-        return;
-      }
-
-      // Для Groq используем специальный метод listModels
-      if (providerType === "groq" && "listModels" in provider && typeof provider.listModels === "function") {
-        const models = await (provider as any).listModels();
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              provider: providerType,
-              models,
-            },
-            null,
-            2,
-          ),
-        );
-        return;
-      }
-
-      // Для других провайдеров возвращаем рекомендации
-      const recommendations: Record<string, string[]> = {
-        ollama: ["qwen2.5:7b-instruct-q4_K_M", "llama3.2:3b", "llama3.3:70b"],
-        groq: ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x22b-instruct", "gemma2-9b-it"],
-        openai: ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
-      };
-
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            provider: providerType,
-            models: recommendations[providerType] || [],
-            note: "Это рекомендуемые модели. Для получения полного списка используйте API провайдера напрямую.",
-          },
-          null,
-          2,
-        ),
-      );
-    } catch (err) {
-      res.statusCode = 500;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error: "Ошибка при получении списка моделей",
-            details: String(err),
-          },
-          null,
-          2,
-        ),
-      );
-    }
-    return;
-  }
-
-  // Эндпоинт для обработки webhook от Telegram (POST)
-  if (method === "POST" && url.pathname === "/telegram/webhook") {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
-    req.on("end", async () => {
-      try {
-        const update = JSON.parse(body);
-        await handleUpdate(update);
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(JSON.stringify({ ok: true }));
-      } catch (err) {
-        console.error("[HTTP] Ошибка обработки webhook:", err);
-        res.statusCode = 500;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              error: "Ошибка при обработке webhook",
-              details: String(err),
-            },
-            null,
-            2,
-          ),
-        );
-      }
-    });
-    return;
-  }
-
-  // Эндпоинт для установки webhook (POST)
-  if (method === "POST" && url.pathname === "/telegram/webhook/set") {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
-    req.on("end", async () => {
-      try {
-        const data = JSON.parse(body);
-        const { webhookUrl } = data;
-        
-        if (!webhookUrl || typeof webhookUrl !== "string") {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(
-            JSON.stringify(
-              {
-                error: "Укажите webhookUrl в теле запроса",
-              },
-              null,
-              2,
-            ),
-          );
-          return;
-        }
-
-        await setWebhook(webhookUrl);
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              success: true,
-              message: `Webhook установлен: ${webhookUrl}`,
-            },
-            null,
-            2,
-          ),
-        );
-      } catch (err) {
-        res.statusCode = 500;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              error: "Ошибка при установке webhook",
-              details: String(err),
-            },
-            null,
-            2,
-          ),
-        );
-      }
-    });
-    return;
-  }
-
-  // Эндпоинт для удаления webhook (POST)
-  if (method === "POST" && url.pathname === "/telegram/webhook/delete") {
-    try {
-      await deleteWebhook();
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            success: true,
-            message: "Webhook удален",
-          },
-          null,
-          2,
-        ),
-      );
-    } catch (err) {
-      res.statusCode = 500;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error: "Ошибка при удалении webhook",
-            details: String(err),
-          },
-          null,
-          2,
-        ),
-      );
-    }
-    return;
-  }
-
-  // Эндпоинт для получения информации о webhook (GET)
-  if (method === "GET" && url.pathname === "/telegram/webhook/info") {
-    try {
-      const info = await getWebhookInfo();
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(JSON.stringify(info, null, 2));
-    } catch (err) {
-      res.statusCode = 500;
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(
-        JSON.stringify(
-          {
-            error: "Ошибка при получении информации о webhook",
-            details: String(err),
-          },
-          null,
-          2,
-        ),
-      );
-    }
-    return;
-  }
-
-  // Эндпоинт для смены провайдера (POST)
-  if (method === "POST" && url.pathname === "/llm/providers/set") {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
-    req.on("end", async () => {
-      try {
-        const data = JSON.parse(body);
-        const { chatProvider, embeddingsProvider } = data;
-
-        if (chatProvider) {
-          // Важно: в этом проекте чат-провайдер фиксирован и не переключается.
-          if (String(chatProvider).trim() !== "groq") {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json; charset=utf-8");
-            res.end(
-              JSON.stringify(
-                {
-                  error: 'Смена chatProvider запрещена. Разрешён только "groq".',
-                },
-                null,
-                2,
-              ),
-            );
-            return;
-          }
-          llmFactory.setChatProvider("groq");
-        }
-        if (embeddingsProvider) {
-          llmFactory.setEmbeddingsProvider(embeddingsProvider as ProviderType);
-        }
-
-        const config = llmFactory.getConfig();
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              success: true,
-              config: {
-                chatProvider: config.chatProvider,
-                embeddingsProvider: config.embeddingsProvider,
-              },
-            },
-            null,
-            2,
-          ),
-        );
-      } catch (err) {
-        res.statusCode = 400;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(
-          JSON.stringify(
-            {
-              error: "Ошибка при смене провайдера",
-              details: String(err),
-            },
-            null,
-            2,
-          ),
-        );
-      }
-    });
-    return;
-  }
-
-  res.statusCode = 404;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(
-    JSON.stringify(
-      {
-        error: "Not found",
-      },
-      null,
-      2,
-    ),
-  );
+// Health check endpoint
+app.get("/health", async (_req: Request, res: Response) => {
+  const health = await getHealth();
+  res.status(200).json(health);
 });
 
-server.listen(PORT, () => {
+// Search endpoint
+app.get("/search", async (req: Request, res: Response) => {
+  const query = parseSearchQuery(req);
+  if (!query.text && !query.category && !query.brand) {
+    res.status(400).json({
+      error:
+        "Укажите хотя бы один из параметров: text, category, brand (опционально: region, limit).",
+    });
+    return;
+  }
+
+  try {
+    const result = await catalogService.searchEquipment(query);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: "Ошибка при выполнении поиска",
+      details: String(err),
+    });
+  }
+});
+
+// LLM providers info endpoint
+app.get("/llm/providers", async (_req: Request, res: Response) => {
+  try {
+    const health = await llmFactory.checkHealth();
+    const config = llmFactory.getConfig();
+    const available = llmFactory.getAvailableProviders();
+
+    res.status(200).json({
+      available,
+      health,
+      config: {
+        chatProvider: config.chatProvider,
+        embeddingsProvider: config.embeddingsProvider,
+        fallbackProviders: config.fallbackProviders,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Ошибка при получении информации о провайдерах",
+      details: String(err),
+    });
+  }
+});
+
+// LLM provider models endpoint
+app.get("/llm/providers/models", async (req: Request, res: Response) => {
+  const providerType = req.query.provider as ProviderType | null;
+
+  if (!providerType) {
+    res.status(400).json({
+      error: "Укажите параметр provider (ollama, groq, openai)",
+    });
+    return;
+  }
+
+  try {
+    const provider = llmFactory.getProvider(providerType);
+    if (!provider) {
+      res.status(404).json({
+        error: `Провайдер ${providerType} не инициализирован`,
+      });
+      return;
+    }
+
+    // Для Groq используем специальный метод listModels
+    if (providerType === "groq" && "listModels" in provider && typeof provider.listModels === "function") {
+      const models = await (provider as any).listModels();
+      res.status(200).json({
+        provider: providerType,
+        models,
+      });
+      return;
+    }
+
+    // Для других провайдеров возвращаем рекомендации
+    const recommendations: Record<string, string[]> = {
+      ollama: ["qwen2.5:7b-instruct-q4_K_M", "llama3.2:3b", "llama3.3:70b"],
+      groq: ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x22b-instruct", "gemma2-9b-it"],
+      openai: ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
+    };
+
+    res.status(200).json({
+      provider: providerType,
+      models: recommendations[providerType] || [],
+      note: "Это рекомендуемые модели. Для получения полного списка используйте API провайдера напрямую.",
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Ошибка при получении списка моделей",
+      details: String(err),
+    });
+  }
+});
+
+// Telegram webhook endpoint
+app.post("/telegram/webhook", async (req: Request, res: Response) => {
+  try {
+    await handleUpdate(req.body);
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error("[HTTP] Ошибка обработки webhook:", err);
+    res.status(500).json({
+      error: "Ошибка при обработке webhook",
+      details: String(err),
+    });
+  }
+});
+
+// Set webhook endpoint
+app.post("/telegram/webhook/set", async (req: Request, res: Response) => {
+  try {
+    const { webhookUrl } = req.body;
+
+    if (!webhookUrl || typeof webhookUrl !== "string") {
+      res.status(400).json({
+        error: "Укажите webhookUrl в теле запроса",
+      });
+      return;
+    }
+
+    await setWebhook(webhookUrl);
+    res.status(200).json({
+      success: true,
+      message: `Webhook установлен: ${webhookUrl}`,
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Ошибка при установке webhook",
+      details: String(err),
+    });
+  }
+});
+
+// Delete webhook endpoint
+app.post("/telegram/webhook/delete", async (_req: Request, res: Response) => {
+  try {
+    await deleteWebhook();
+    res.status(200).json({
+      success: true,
+      message: "Webhook удален",
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Ошибка при удалении webhook",
+      details: String(err),
+    });
+  }
+});
+
+// Get webhook info endpoint
+app.get("/telegram/webhook/info", async (_req: Request, res: Response) => {
+  try {
+    const info = await getWebhookInfo();
+    res.status(200).json(info);
+  } catch (err) {
+    res.status(500).json({
+      error: "Ошибка при получении информации о webhook",
+      details: String(err),
+    });
+  }
+});
+
+// Set LLM provider endpoint
+app.post("/llm/providers/set", async (req: Request, res: Response) => {
+  try {
+    const { chatProvider, embeddingsProvider } = req.body;
+
+    if (chatProvider) {
+      // Важно: в этом проекте чат-провайдер фиксирован и не переключается.
+      if (String(chatProvider).trim() !== "groq") {
+        res.status(400).json({
+          error: 'Смена chatProvider запрещена. Разрешён только "groq".',
+        });
+        return;
+      }
+      llmFactory.setChatProvider("groq");
+    }
+    if (embeddingsProvider) {
+      llmFactory.setEmbeddingsProvider(embeddingsProvider as ProviderType);
+    }
+
+    const config = llmFactory.getConfig();
+    res.status(200).json({
+      success: true,
+      config: {
+        chatProvider: config.chatProvider,
+        embeddingsProvider: config.embeddingsProvider,
+      },
+    });
+  } catch (err) {
+    res.status(400).json({
+      error: "Ошибка при смене провайдера",
+      details: String(err),
+    });
+  }
+});
+
+// 404 handler
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({
+    error: "Not found",
+  });
+});
+
+// Error handler
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("[Express] Необработанная ошибка:", err);
+  res.status(500).json({
+    error: "Внутренняя ошибка сервера",
+    details: String(err),
+  });
+});
+
+// Start server
+app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(
     `HTTP API запущен на порту ${PORT}. Маршруты:\n` +

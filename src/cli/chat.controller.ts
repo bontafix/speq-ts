@@ -135,7 +135,8 @@ export class ChatController {
                 console.log(`💡 ${result.message}`);
               }
               
-              const answerText = this.answerGenerator.generatePlainText(result.items);
+              // В CLI не включаем изображения в текст (это консольный вывод)
+              const answerText = this.answerGenerator.generatePlainText(result.items, false);
               console.log(answerText);
 
               // 4. Обогащаем контекст LLM результатами для продолжения диалога

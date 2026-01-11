@@ -13,7 +13,7 @@ export class AnswerGenerator {
 
   constructor(imagesDir?: string, imageBaseUrl?: string) {
     this.imagesDir = imagesDir || join(cwd(), "images");
-    // Формат URL: https://domain.com/speq-images/{id}
+    // Формат URL: https://domain.com/speq-images/{id}/200
     this.imageBaseUrl = imageBaseUrl || process.env.IMAGE_BASE_URL || "";
   }
 
@@ -44,7 +44,7 @@ export class AnswerGenerator {
 
   /**
    * Возвращает URL изображения для оборудования.
-   * Формат: https://domain.com/speq-images/{equipmentId}
+   * Формат: https://domain.com/speq-images/{equipmentId}/200
    * 
    * @param equipmentId - id оборудования
    * @returns URL изображения или null, если baseUrl не задан
@@ -60,15 +60,96 @@ export class AnswerGenerator {
       return null;
     }
     
-    // Формируем URL: https://domain.com/speq-images/{id}
+    // Формируем URL: https://domain.com/speq-images/{id}/200
     const base = this.imageBaseUrl.endsWith("/") 
       ? this.imageBaseUrl.slice(0, -1) 
       : this.imageBaseUrl;
     
-    return `${base}/speq-images/${equipmentId}`;
+    return `${base}/speq-images/${equipmentId}/200`;
   }
 
-  generatePlainText(items: EquipmentSummary[]): string {
+  /**
+   * Форматирует подпись к фото оборудования для Telegram.
+   * Включает полную информацию: название, бренд, категорию, цену и параметры.
+   * 
+   * @param item - элемент оборудования
+   * @param index - индекс элемента (начиная с 0)
+   * @returns отформатированная подпись для фото
+   */
+  formatPhotoCaption(item: EquipmentSummary, index: number): string {
+    const paramsPreview = Object.entries(item.mainParameters || {})
+      .slice(0, 3)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(", ");
+
+    let price: string;
+    if (item.price == null) {
+      price = "цена по запросу";
+    } else if (typeof item.price === "number") {
+      price = `${item.price.toLocaleString("ru-RU")} ₽`;
+    } else {
+      price = item.price;
+    }
+
+    let caption = `${index + 1}. ${item.name}\n`;
+    caption += `Бренд: ${item.brand}\n`;
+    caption += `Категория: ${item.category}\n`;
+    caption += `Цена: ${price}`;
+    
+    if (paramsPreview) {
+      caption += `\n\nПараметры: ${paramsPreview}`;
+    }
+
+    return caption;
+  }
+
+  /**
+   * Форматирует один элемент оборудования в текстовую строку.
+   * Используется для генерации списка и может быть переиспользован в других местах.
+   * 
+   * @param item - элемент оборудования
+   * @param index - индекс элемента (начиная с 0)
+   * @param includeImage - включать ли информацию об изображении
+   * @returns отформатированная строка
+   */
+  formatItem(item: EquipmentSummary, index: number, includeImage: boolean = false): string {
+    const paramsPreview = Object.entries(item.mainParameters || {})
+      .slice(0, 3)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(", ");
+
+    let price: string;
+    if (item.price == null) {
+      price = "цена по запросу";
+    } else if (typeof item.price === "number") {
+      price = `${item.price.toLocaleString("ru-RU")} ₽`;
+    } else {
+      price = item.price;
+    }
+
+    let imageInfo = "";
+    if (includeImage) {
+      const imageUrl = this.getImageUrl(item.id);
+      if (imageUrl) {
+        imageInfo = ` 📷 ${imageUrl}`;
+      }
+    }
+
+    return `${index + 1}. ${item.name} (${item.brand}, ${item.category}) — ${price}${
+      paramsPreview ? ` | ${paramsPreview}` : ""
+    }${imageInfo}`;
+  }
+
+  /**
+   * Генерирует текстовое представление списка оборудования.
+   * Включает информацию об изображениях, если они доступны.
+   * 
+   * @param items - список оборудования
+   * @param includeImages - включать ли URL изображений в текст (по умолчанию true)
+   *                       Установите false, если изображения отправляются отдельно (например, в Telegram)
+   * @returns отформатированный текст списка
+   */
+  generatePlainText(items: EquipmentSummary[], includeImages: boolean = true): string {
     if (items.length === 0) {
       return "Подходящее оборудование не найдено. Попробуйте переформулировать запрос или ослабить фильтры.";
     }
@@ -77,25 +158,7 @@ export class AnswerGenerator {
     lines.push("Найдено оборудование:");
 
     items.forEach((item, index) => {
-      const paramsPreview = Object.entries(item.mainParameters || {})
-        .slice(0, 3)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ");
-
-      let price: string;
-      if (item.price == null) {
-        price = "цена по запросу";
-      } else if (typeof item.price === "number") {
-        price = `${item.price.toLocaleString("ru-RU")} ₽`;
-      } else {
-        price = item.price;
-      }
-
-      lines.push(
-        `${index + 1}. ${item.name} (${item.brand}, ${item.category}) — ${price}${
-          paramsPreview ? ` | ${paramsPreview}` : ""
-        }`,
-      );
+      lines.push(this.formatItem(item, index, includeImages));
     });
 
     return lines.join("\n");
