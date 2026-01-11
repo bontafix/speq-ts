@@ -5,7 +5,7 @@ export const equipmentRouter = Router();
 
 /**
  * @swagger
- * /api/equipment/{id}:
+ * /equipment/{id}:
  *   get:
  *     summary: Получить карточку оборудования по ID
  *     tags: [Equipment]

@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../../",
     "module": "commonjs",
     "target": "es2020",
     "esModuleInterop": true,
@@ -13,6 +13,9 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "../../src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "../../src/db/pg.ts"
+  ],
+  "exclude": ["node_modules", "dist", "../../src/**/*"]
 }
