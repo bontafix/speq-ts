@@ -181,6 +181,9 @@ export class SearchEngine {
     // 4. Гибридное слияние (RRF)
     const merged = this.hybridFusion(ftsResults, vectorResults, relaxedResults, limit);
     
+    // 5. Получаем общее количество записей для правильной пагинации
+    const total = await this.equipmentRepository.countEquipment(normalizedQuery);
+    
     const strategies: string[] = [];
     if (ftsResults.length > 0) strategies.push("fts");
     if (vectorResults.length > 0) strategies.push("vector_strict");
@@ -188,7 +191,7 @@ export class SearchEngine {
 
     return {
       items: merged,
-      total: merged.length,
+      total: total,
       usedStrategy: strategies.length > 1 ? "mixed" : (strategies[0] as any || "fts"),
     };
   }
@@ -225,9 +228,10 @@ export class SearchEngine {
         // Оставляем только текст
         if (fallbackQuery.text && fallbackQuery.text.trim().length > 0) {
             const results = await this.equipmentRepository.fullTextSearch(fallbackQuery, limit);
+            const total = await this.equipmentRepository.countEquipment(fallbackQuery);
             return {
                 items: results,
-                total: results.length,
+                total: total,
                 usedStrategy: "fallback"
             };
         }

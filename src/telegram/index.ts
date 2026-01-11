@@ -462,34 +462,60 @@ export async function setupBot() {
         const pageSize = parseInt(process.env.CATEGORY_RESULTS_PAGE_SIZE || "5", 10);
         const safePageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 5;
         
-        // Обновляем страницу
-        if (data === CALLBACK.catResPagePrev) {
-          session.categoryResultsPage = Math.max(0, session.categoryResultsPage - 1);
-        } else {
-          session.categoryResultsPage = session.categoryResultsPage + 1;
+        // Сначала получаем total, чтобы вычислить totalPages и проверить границы
+        // Делаем запрос с минимальным limit=1, чтобы получить только total
+        const totalResult = await app.catalogService.searchEquipment({ 
+          category: categoryName, 
+          limit: 1,
+          offset: 0
+        });
+
+        if (totalResult.total === 0) {
+          await safeAnswerCbQuery(ctx, "В категории ничего не найдено");
+          return;
         }
+
+        const totalPages = Math.ceil(totalResult.total / safePageSize);
+        const currentPage = session.categoryResultsPage;
+        
+        // Вычисляем новую страницу с проверкой границ
+        let newPage: number;
+        if (data === CALLBACK.catResPagePrev) {
+          newPage = Math.max(0, currentPage - 1);
+        } else {
+          newPage = Math.min(totalPages - 1, currentPage + 1);
+        }
+
+        // Если страница не изменилась (уже на границе), не делаем ничего
+        if (newPage === currentPage) {
+          await safeAnswerCbQuery(ctx, `Вы уже на ${data === CALLBACK.catResPagePrev ? 'первой' : 'последней'} странице`);
+          return;
+        }
+
+        // Обновляем страницу в сессии
+        session.categoryResultsPage = newPage;
         await sessions.set(session);
 
-        await safeAnswerCbQuery(ctx, `Загружаю страницу ${session.categoryResultsPage + 1}...`);
+        await safeAnswerCbQuery(ctx, `Загружаю страницу ${newPage + 1}...`);
         await ctx.sendChatAction("typing");
 
         // Удаляем предыдущие сообщения перед показом новой страницы
         await deletePreviousMessages(ctx, telegramId);
 
-        const offset = session.categoryResultsPage * safePageSize;
+        const offset = newPage * safePageSize;
         const result = await app.catalogService.searchEquipment({ 
           category: categoryName, 
           limit: safePageSize,
           offset: offset
         });
 
-        if (result.total === 0) {
+        if (result.total === 0 || result.items.length === 0) {
           await reply(ctx, `❌ В категории «${categoryName}» ничего не найдено.`);
           return;
         }
-
-        const totalPages = Math.ceil(result.total / safePageSize);
-        const currentPage = session.categoryResultsPage;
+        
+        // Пересчитываем totalPages из актуального total (может измениться)
+        const actualTotalPages = Math.ceil(result.total / safePageSize);
         
         // Сначала отправляем результаты: фото с подписями для оборудования с изображениями,
         // текстовые сообщения для оборудования без изображений
@@ -498,14 +524,14 @@ export async function setupBot() {
         // Затем отправляем заголовок с клавиатурой пагинации
         await reply(
           ctx,
-          `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`,
+          `✅ **${categoryName}** — найдено: ${result.total} (стр. ${newPage + 1}/${actualTotalPages})`,
           {
             parse_mode: "Markdown",
             ...buildCategoryResultsKeyboard({
-              page: currentPage,
-              totalPages: totalPages,
-              canPrev: currentPage > 0,
-              canNext: currentPage < totalPages - 1
+              page: newPage,
+              totalPages: actualTotalPages,
+              canPrev: newPage > 0,
+              canNext: newPage < actualTotalPages - 1
             })
           }
         );

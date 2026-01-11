@@ -246,6 +246,65 @@ export class EquipmentRepository {
   }
 
   /**
+   * Подсчет общего количества записей, соответствующих запросу.
+   * Использует те же WHERE условия, что и fullTextSearch.
+   */
+  async countEquipment(query: SearchQuery): Promise<number> {
+    const values: any[] = [];
+    const whereParts: string[] = ["e.is_active = true"];
+
+    // Текстовый поиск через tsvector-колонку search_vector
+    if (query.text && query.text.trim()) {
+      values.push(query.text.trim());
+      const placeholder = `$${values.length}`;
+      whereParts.push(`e.search_vector @@ plainto_tsquery('russian', ${placeholder})`);
+    }
+
+    if (query.category && query.category.trim()) {
+      values.push(`%${query.category.trim()}%`);
+      whereParts.push(`e.category ILIKE $${values.length}`);
+    }
+    if (query.brand && query.brand.trim()) {
+      values.push(query.brand.trim());
+      whereParts.push(`e.brand = $${values.length}`);
+    }
+    if (query.region && query.region.trim()) {
+      values.push(query.region.trim());
+      whereParts.push(`e.region = $${values.length}`);
+    }
+
+    // Обработка параметров из main_parameters (JSONB)
+    if (query.parameters && Object.keys(query.parameters).length > 0) {
+      for (const [key, value] of Object.entries(query.parameters)) {
+        const condition = this.buildParameterCondition(key, value);
+        if (!condition) continue;
+        
+        const { paramKey, value: conditionValue, operator, sqlCast } = condition;
+        
+        values.push(paramKey, conditionValue);
+        const keyIndex = values.length - 1;
+        const valueIndex = values.length;
+        
+        whereParts.push(
+          `(e.normalized_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`
+        );
+      }
+    }
+
+    const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+
+    const sql = `
+      SELECT COUNT(*)::int AS total
+      FROM equipment e
+      INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+      ${whereClause}
+    `;
+
+    const result = await pgPool.query<{ total: number }>(sql, values);
+    return result.rows[0]?.total ?? 0;
+  }
+
+  /**
    * Vector search (pgvector) по эмбеддингу запроса.
    * 
    * ВАЖНО: Этот метод требует передачи LLM провайдера для генерации embedding запроса.
