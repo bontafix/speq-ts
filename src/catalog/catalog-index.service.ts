@@ -38,22 +38,30 @@ export class CatalogIndexService {
     try {
       const [categoriesResult, brandsResult, regionsResult, totalResult] = 
         await Promise.all([
-          // Категории
+          // Категории из таблицы categories (только активные, с учетом активности брендов)
           pgPool.query(`
-            SELECT category as name, COUNT(*) as count
-            FROM equipment
-            WHERE is_active = true AND category IS NOT NULL AND category != ''
-            GROUP BY category
-            ORDER BY count DESC
+            SELECT 
+              c.name,
+              COUNT(e.id) as count
+            FROM categories c
+            INNER JOIN equipment e ON e.category = c.name AND e.is_active = true
+            INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+            WHERE c.is_active = true
+            GROUP BY c.id, c.name
+            HAVING COUNT(e.id) > 0
+            ORDER BY count DESC, c.name
           `),
           
-          // Бренды
+          // Бренды из таблицы brands (только активные)
           pgPool.query(`
-            SELECT brand as name, COUNT(*) as count
-            FROM equipment
-            WHERE is_active = true AND brand IS NOT NULL AND brand != ''
-            GROUP BY brand
-            ORDER BY count DESC
+            SELECT 
+              b.name,
+              COUNT(e.id) as count
+            FROM brands b
+            LEFT JOIN equipment e ON e.brand = b.name AND e.is_active = true
+            WHERE b.is_active = true
+            GROUP BY b.id, b.name
+            ORDER BY count DESC, b.name
           `),
           
           // Регионы
@@ -65,11 +73,12 @@ export class CatalogIndexService {
             ORDER BY count DESC
           `),
           
-          // Всего
+          // Всего (только с активными брендами)
           pgPool.query(`
             SELECT COUNT(*) as total
-            FROM equipment
-            WHERE is_active = true
+            FROM equipment e
+            INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+            WHERE e.is_active = true
           `),
         ]);
 
@@ -115,12 +124,13 @@ export class CatalogIndexService {
   async getCategoryParameters(category: string): Promise<string[]> {
     try {
       const result = await pgPool.query(`
-        SELECT DISTINCT jsonb_object_keys(main_parameters) as param
-        FROM equipment
-        WHERE is_active = true 
-          AND category = $1
-          AND main_parameters IS NOT NULL 
-          AND main_parameters != '{}'::jsonb
+        SELECT DISTINCT jsonb_object_keys(e.main_parameters) as param
+        FROM equipment e
+        INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+        WHERE e.is_active = true 
+          AND e.category = $1
+          AND e.main_parameters IS NOT NULL 
+          AND e.main_parameters != '{}'::jsonb
         ORDER BY param
       `, [category]);
       
@@ -152,13 +162,14 @@ export class CatalogIndexService {
           COUNT(*) as count
         FROM (
           SELECT 
-            jsonb_object_keys(main_parameters) as param_name,
-            id
-          FROM equipment
-          WHERE is_active = true 
-            AND category = $1
-            AND main_parameters IS NOT NULL 
-            AND main_parameters != '{}'::jsonb
+            jsonb_object_keys(e.main_parameters) as param_name,
+            e.id
+          FROM equipment e
+          INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
+          WHERE e.is_active = true 
+            AND e.category = $1
+            AND e.main_parameters IS NOT NULL 
+            AND e.main_parameters != '{}'::jsonb
         ) subquery
         GROUP BY param_name
         ORDER BY count DESC, param_name

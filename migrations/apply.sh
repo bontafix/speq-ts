@@ -7,6 +7,18 @@
 
 set -e
 
+# Загружаем переменные из .env файла (если существует)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_ROOT/.env"
+
+if [ -f "$ENV_FILE" ]; then
+  # Загружаем переменные из .env, игнорируя комментарии и пустые строки
+  set -a
+  source <(grep -v '^#' "$ENV_FILE" | grep -v '^$' | sed 's/^/export /')
+  set +a
+fi
+
 # Параметры подключения (можно переопределить через переменные окружения)
 PGHOST="${PGHOST:-localhost}"
 PGPORT="${PGPORT:-5432}"

@@ -324,10 +324,12 @@ export async function setupBot() {
       await sessions.set(session);
 
       if (step.action === "ask") {
-        // LLM хочет уточнить
+        // LLM хочет уточнить - не удаляем предыдущие сообщения, продолжаем диалог
         await reply(ctx, `❓ ${step.question}`);
       } else if (step.action === "final") {
-        // LLM сформировал запрос
+        // LLM сформировал запрос - удаляем предыдущие сообщения перед показом результатов
+        await deletePreviousMessages(ctx, telegramId);
+        
         console.log(`[Telegram] SearchQuery: ${JSON.stringify(step.query, null, 2)}`);
         
         // 3. Ищем
@@ -338,7 +340,7 @@ export async function setupBot() {
           let msg = `❌ Ничего не найдено.`;
           if (result.message) msg += `\n💡 ${result.message}`;
           
-          await reply(ctx, msg);
+          await reply(ctx, msg, buildMainMenuKeyboard());
           
           // Можно добавить подсказки категорий, если есть в result.suggestions
           if (result.suggestions?.popularCategories?.length) {
@@ -350,7 +352,7 @@ export async function setupBot() {
           // Нашли
           let header = `✅ Найдено: ${result.total}`;
           if (result.message) header += `\n💡 ${result.message}`;
-          await reply(ctx, header);
+          await reply(ctx, header, buildMainMenuKeyboard());
 
           // Отправляем результаты: фото с подписями для оборудования с изображениями,
           // текстовые сообщения для оборудования без изображений
@@ -384,32 +386,47 @@ export async function setupBot() {
     try {
       // Показать категории
       if (data === CALLBACK.showCategories) {
-        const index = catalogIndex.getIndex();
+        await safeAnswerCbQuery(ctx, "Загружаю категории...");
+        
+        // Обновляем индекс категорий при каждом запросе
+        const index = await catalogIndex.buildIndex();
         if (!index) {
-          await safeAnswerCbQuery(ctx, "Каталог загружается...");
+          await reply(ctx, "❌ Каталог загружается. Попробуйте позже.");
           return;
         }
 
+        // Удаляем все предыдущие сообщения перед показом категорий
+        await deletePreviousMessages(ctx, telegramId);
+
         const categories = index.categories.map(c => ({ name: c.name, count: c.count }));
         
-        // Сохраняем страницу в сессии
+        // Получаем или создаем сессию и используем сохраненную страницу (или 0 если нет)
         let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
-        session.page = 0;
+        const savedPage = session.page ?? 0;
         session.categoryOptions = categories;
+        // Не сбрасываем session.page, чтобы сохранить текущую страницу
         await sessions.set(session);
 
-        await ctx.editMessageText(
-          `📋 **Категории оборудования** (${index.totalItems} единиц)\n\nВыберите категорию:`,
-          { parse_mode: "Markdown", ...buildCategoriesKeyboard({ categories, page: 0 }) }
+        await reply(
+          ctx,
+          `📋 **Категории оборудования** (${index.totalItems} единиц, ${index.categories.length} категорий)\n\nВыберите категорию:`,
+          { parse_mode: "Markdown", ...buildCategoriesKeyboard({ categories, page: savedPage }) }
         );
-        await safeAnswerCbQuery(ctx);
         return;
       }
 
       // Пагинация категорий
       if (data === CALLBACK.catPagePrev || data === CALLBACK.catPageNext) {
+        await safeAnswerCbQuery(ctx);
+        
+        // Обновляем индекс категорий при пагинации для актуальных данных
+        const index = await catalogIndex.buildIndex();
+        
         let session = (await sessions.get(telegramId)) ?? newSession(telegramId);
-        const categories = session.categoryOptions ?? [];
+        
+        // Обновляем список категорий из свежего индекса
+        const categories = index.categories.map(c => ({ name: c.name, count: c.count }));
+        session.categoryOptions = categories;
         
         if (data === CALLBACK.catPagePrev) {
           session.page = Math.max(0, session.page - 1);
@@ -418,10 +435,17 @@ export async function setupBot() {
         }
         await sessions.set(session);
 
-        await ctx.editMessageReplyMarkup(
-          buildCategoriesKeyboard({ categories, page: session.page }).reply_markup
+        // Удаляем предыдущие сообщения и показываем новую страницу
+        await deletePreviousMessages(ctx, telegramId);
+        
+        const totalItems = index.totalItems;
+        const categoriesCount = index.categories.length;
+        
+        await reply(
+          ctx,
+          `📋 **Категории оборудования** (${totalItems} единиц, ${categoriesCount} категорий)\n\nВыберите категорию:`,
+          { parse_mode: "Markdown", ...buildCategoriesKeyboard({ categories, page: session.page }) }
         );
-        await safeAnswerCbQuery(ctx);
         return;
       }
 
@@ -449,6 +473,9 @@ export async function setupBot() {
         await safeAnswerCbQuery(ctx, `Загружаю страницу ${session.categoryResultsPage + 1}...`);
         await ctx.sendChatAction("typing");
 
+        // Удаляем предыдущие сообщения перед показом новой страницы
+        await deletePreviousMessages(ctx, telegramId);
+
         const offset = session.categoryResultsPage * safePageSize;
         const result = await app.catalogService.searchEquipment({ 
           category: categoryName, 
@@ -463,23 +490,25 @@ export async function setupBot() {
 
         const totalPages = Math.ceil(result.total / safePageSize);
         const currentPage = session.categoryResultsPage;
-        // Обновляем сообщение с заголовком и пагинацией
-        await ctx.editMessageText(
+        
+        // Сначала отправляем результаты: фото с подписями для оборудования с изображениями,
+        // текстовые сообщения для оборудования без изображений
+        await sendSearchResults(ctx, result.items);
+
+        // Затем отправляем заголовок с клавиатурой пагинации
+        await reply(
+          ctx,
           `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`,
           {
             parse_mode: "Markdown",
-            reply_markup: buildCategoryResultsKeyboard({
+            ...buildCategoryResultsKeyboard({
               page: currentPage,
               totalPages: totalPages,
               canPrev: currentPage > 0,
               canNext: currentPage < totalPages - 1
-            }).reply_markup
+            })
           }
         );
-
-        // Отправляем результаты: фото с подписями для оборудования с изображениями,
-        // текстовые сообщения для оборудования без изображений
-        await sendSearchResults(ctx, result.items);
         return;
       }
 
@@ -497,6 +526,15 @@ export async function setupBot() {
         const categoryName = categoryOption.name;
         await safeAnswerCbQuery(ctx, `Загружаю параметры...`);
         
+        // Вычисляем страницу категории по индексу и сохраняем её
+        const pageSize = 8; // Размер страницы по умолчанию (как в buildCategoriesKeyboard)
+        const categoryPage = Math.floor(catIndex / pageSize);
+        session.page = categoryPage;
+        await sessions.set(session);
+        
+        // Удаляем предыдущие сообщения перед показом параметров
+        await deletePreviousMessages(ctx, telegramId);
+        
         // Получаем параметры с количеством оборудования
         const paramsWithCount = await catalogIndex.getCategoryParametersWithCount(categoryName);
         
@@ -509,7 +547,8 @@ export async function setupBot() {
         
         msg += "\n\n_Эти параметры можно использовать при текстовом поиске._";
 
-        await ctx.editMessageText(
+        await reply(
+            ctx,
             msg, 
             { 
                 parse_mode: "Markdown", 
@@ -532,6 +571,11 @@ export async function setupBot() {
 
         const categoryName = categoryOption.name;
         
+        // Вычисляем страницу категории по индексу и сохраняем её для возврата
+        const categoriesPageSize = 8; // Размер страницы категорий по умолчанию (как в buildCategoriesKeyboard)
+        const categoryPage = Math.floor(catIndex / categoriesPageSize);
+        session.page = categoryPage;
+        
         // Сбрасываем страницу результатов при выборе новой категории
         session.categoryName = categoryName;
         session.categoryResultsPage = 0;
@@ -540,9 +584,12 @@ export async function setupBot() {
         await safeAnswerCbQuery(ctx, `Ищу: ${categoryName}...`);
         await ctx.sendChatAction("typing");
 
-        // Получаем размер страницы из env (по умолчанию 5)
-        const pageSize = parseInt(process.env.CATEGORY_RESULTS_PAGE_SIZE || "5", 10);
-        const safePageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 5;
+        // Удаляем предыдущие сообщения перед показом результатов
+        await deletePreviousMessages(ctx, telegramId);
+
+        // Получаем размер страницы результатов из env (по умолчанию 5)
+        const resultsPageSize = parseInt(process.env.CATEGORY_RESULTS_PAGE_SIZE || "5", 10);
+        const safePageSize = Number.isInteger(resultsPageSize) && resultsPageSize > 0 ? resultsPageSize : 5;
         const offset = session.categoryResultsPage * safePageSize;
 
         // Поиск по категории с пагинацией
@@ -553,54 +600,47 @@ export async function setupBot() {
         });
 
         if (result.total === 0) {
-          await reply(ctx, `❌ В категории «${categoryName}» ничего не найдено.`);
           await reply(
             ctx, 
-            "Напишите уточнение или выберите действие:",
+            `❌ В категории «${categoryName}» ничего не найдено.\n\nВыберите действие:`,
             buildMainMenuKeyboard()
           );
         } else {
           const totalPages = Math.ceil(result.total / safePageSize);
           const currentPage = session.categoryResultsPage;
           
-          await reply(ctx, `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`, { parse_mode: "Markdown" });
-          
-          // Отправляем клавиатуру пагинации отдельным сообщением
-          await reply(
-            ctx, 
-            "📄 Используйте кнопки для навигации:",
-            buildCategoryResultsKeyboard({
-              page: currentPage,
-              totalPages: totalPages,
-              canPrev: currentPage > 0,
-              canNext: currentPage < totalPages - 1
-            })
-          );
-
-          // Отправляем результаты: фото с подписями для оборудования с изображениями,
+          // Сначала отправляем результаты: фото с подписями для оборудования с изображениями,
           // текстовые сообщения для оборудования без изображений
           await sendSearchResults(ctx, result.items);
+
+          // Затем отправляем заголовок с клавиатурой пагинации
+          await reply(
+            ctx, 
+            `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`,
+            { 
+              parse_mode: "Markdown",
+              ...buildCategoryResultsKeyboard({
+                page: currentPage,
+                totalPages: totalPages,
+                canPrev: currentPage > 0,
+                canNext: currentPage < totalPages - 1
+              })
+            }
+          );
         }
         return;
       }
 
       // Вернуться в главное меню
       if (data === CALLBACK.backToMenu) {
-        // Удаляем текущее сообщение (которое содержит кнопки)
-        try {
-          const messageId = (ctx.callbackQuery as any)?.message?.message_id;
-          if (messageId) {
-            const chatId = ctx.chat?.id || ctx.from?.id;
-            if (chatId) {
-              await bot.telegram.deleteMessage(chatId, messageId).catch(() => undefined);
-            }
-          }
-        } catch (e) {
-          // Игнорируем ошибки
-        }
+        await safeAnswerCbQuery(ctx, "Возвращаюсь в главное меню...");
         
         // Удаляем все предыдущие сообщения перед показом главного меню
         await deletePreviousMessages(ctx, telegramId);
+        
+        // Сбрасываем сессию
+        const s = newSession(telegramId);
+        await sessions.set(s);
         
         // Отправляем новое сообщение с главным меню
         await reply(
@@ -608,7 +648,6 @@ export async function setupBot() {
           "🔍 Напишите, что ищете, или выберите категорию:",
           buildMainMenuKeyboard()
         );
-        await safeAnswerCbQuery(ctx);
         return;
       }
 
