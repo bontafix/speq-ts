@@ -10,6 +10,7 @@
     "bot:dev": "nodemon --watch src --ext ts --signal SIGTERM --exec \"ts-node src/telegram/index.ts\"",
     "embed:equipment": "ts-node src/worker/embed-equipment.ts",
     "serve": "ts-node src/http/server.ts",
+    "serve:dev": "nodemon --watch src --ext ts --signal SIGTERM --exec \"ts-node src/http/server.ts\"",
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
     "generate:dictionary": "ts-node src/scripts/generate-dictionary.ts",
     "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",
@@ -33,6 +34,7 @@
   "homepage": "https://github.com/bontafix/speq-ts#readme",
   "devDependencies": {
     "@modelcontextprotocol/server-postgres": "^0.6.2",
+    "@types/express": "^5.0.6",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.0.3",
     "@types/pg": "^8.16.0",
@@ -45,6 +47,7 @@
     "chalk": "^4.1.2",
     "commander": "^14.0.2",
     "dotenv": "^17.2.3",
+    "express": "^5.2.1",
     "fs-extra": "^11.3.3",
     "groq-sdk": "^0.3.3",
     "pg": "^8.16.3",

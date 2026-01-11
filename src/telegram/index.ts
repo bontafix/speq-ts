@@ -6,6 +6,7 @@ import { AppContainer } from "../app/container";
 import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
 import { AnswerGenerator } from "../llm/answer.generator";
 import { CatalogIndexService } from "../catalog/catalog-index.service";
+import type { EquipmentSummary } from "../catalog/catalog.types";
 import { createSessionStore } from "./session.store";
 import type { WizardSession } from "./types";
 import { logIncoming, logOutgoing } from "./telegram.logger";
@@ -107,6 +108,62 @@ export async function setupBot() {
     }
     
     return message;
+  }
+
+  /**
+   * Отправляет результаты поиска: фото с подписями для оборудования с изображениями,
+   * текстовые сообщения для оборудования без изображений.
+   * Обрабатывает rate limits и сохраняет message_id в сессию.
+   * 
+   * @param ctx - контекст Telegram
+   * @param items - список оборудования (EquipmentSummary)
+   */
+  async function sendSearchResults(ctx: any, items: EquipmentSummary[]) {
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (!item) continue;
+      
+      const imageUrl = answerGenerator.getImageUrl(item.id);
+      
+      if (imageUrl) {
+        // Отправляем фото с полной подписью
+        try {
+          const caption = answerGenerator.formatPhotoCaption(item, index);
+          const message = await ctx.replyWithPhoto(imageUrl, { caption });
+          
+          // Сохраняем message_id в сессию
+          if (message?.message_id && ctx.from?.id) {
+            const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
+            if (!session.messageIds) {
+              session.messageIds = [];
+            }
+            session.messageIds.push(message.message_id);
+            await sessions.set(session);
+          }
+        } catch (error: any) {
+          // Обрабатываем ошибку 429 (Too Many Requests) - добавляем задержку
+          const errorMessage = error?.response?.description || error?.message || "";
+          if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
+            const retryAfter = error?.response?.parameters?.retry_after || 10;
+            console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+            // Не повторяем попытку автоматически, просто пропускаем это изображение
+          } else {
+            // Для других ошибок просто логируем
+            console.warn(`[Telegram] Не удалось отправить изображение для ${item.id} (URL: ${imageUrl}):`, errorMessage);
+          }
+        }
+      } else {
+        // Для оборудования без фото отправляем текстовое сообщение
+        const text = answerGenerator.formatItem(item, index, false);
+        try {
+          const message = await reply(ctx, text);
+          // message_id уже сохранен в функции reply
+        } catch (error: any) {
+          console.warn(`[Telegram] Не удалось отправить текстовое сообщение для ${item.id}:`, error?.message);
+        }
+      }
+    }
   }
 
   /**
@@ -295,51 +352,9 @@ export async function setupBot() {
           if (result.message) header += `\n💡 ${result.message}`;
           await reply(ctx, header);
 
-          const answerText = answerGenerator.generatePlainText(result.items);
-          await reply(ctx, answerText);
-
-          // Отправляем изображения для каждого найденного оборудования
-          for (const item of result.items) {
-            const imageUrl = answerGenerator.getImageUrl(item.id);
-            if (imageUrl) {
-              try {
-                // Отправляем изображение по URL
-                // Формат URL: https://domain.com/speq-images/{id}
-                // Telegram сам загрузит изображение по этой ссылке
-                const caption = `${item.name} (${item.brand}, ${item.category})`;
-                const message = await ctx.replyWithPhoto(imageUrl, { caption });
-                
-                // Сохраняем message_id в сессию
-                if (message?.message_id && ctx.from?.id) {
-                  const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
-                  if (!session.messageIds) {
-                    session.messageIds = [];
-                  }
-                  session.messageIds.push(message.message_id);
-                  await sessions.set(session);
-                }
-              } catch (error: any) {
-                // Обрабатываем ошибку 429 (Too Many Requests) - добавляем задержку
-                const errorMessage = error?.response?.description || error?.message || "";
-                if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
-                  const retryAfter = error?.response?.parameters?.retry_after || 10;
-                  console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
-                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-                  // Не повторяем попытку автоматически, просто пропускаем это изображение
-                } else {
-                  // Для других ошибок просто логируем
-                  console.warn(`[Telegram] Не удалось отправить изображение для ${item.id} (URL: ${imageUrl}):`, errorMessage);
-                }
-              }
-            } else {
-              // Логируем, если URL не найден (для отладки)
-              if (!imageBaseUrl) {
-                console.debug(`[Telegram] IMAGE_BASE_URL не задан, изображения не отправляются`);
-              } else {
-                console.debug(`[Telegram] Изображение не найдено для оборудования ${item.id} (локальный файл отсутствует)`);
-              }
-            }
-          }
+          // Отправляем результаты: фото с подписями для оборудования с изображениями,
+          // текстовые сообщения для оборудования без изображений
+          await sendSearchResults(ctx, result.items);
 
           // 5. Обогащаем контекст результатами
           const summary = result.items.slice(0, 5)
@@ -448,11 +463,9 @@ export async function setupBot() {
 
         const totalPages = Math.ceil(result.total / safePageSize);
         const currentPage = session.categoryResultsPage;
-        const answerText = answerGenerator.generatePlainText(result.items);
-        
-        // Обновляем сообщение с новыми результатами
+        // Обновляем сообщение с заголовком и пагинацией
         await ctx.editMessageText(
-          `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})\n\n${answerText}`,
+          `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`,
           {
             parse_mode: "Markdown",
             reply_markup: buildCategoryResultsKeyboard({
@@ -464,34 +477,9 @@ export async function setupBot() {
           }
         );
 
-        // Отправляем изображения для текущей страницы
-        for (const item of result.items) {
-          const imageUrl = answerGenerator.getImageUrl(item.id);
-          if (imageUrl) {
-            try {
-              const caption = `${item.name} (${item.brand}, ${item.category})`;
-              const message = await ctx.replyWithPhoto(imageUrl, { caption });
-              
-              if (message?.message_id && ctx.from?.id) {
-                const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
-                if (!session.messageIds) {
-                  session.messageIds = [];
-                }
-                session.messageIds.push(message.message_id);
-                await sessions.set(session);
-              }
-            } catch (error: any) {
-              const errorMessage = error?.response?.description || error?.message || "";
-              if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
-                const retryAfter = error?.response?.parameters?.retry_after || 10;
-                console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
-                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-              } else {
-                console.warn(`[Telegram] Не удалось отправить изображение для ${item.id}:`, errorMessage);
-              }
-            }
-          }
-        }
+        // Отправляем результаты: фото с подписями для оборудования с изображениями,
+        // текстовые сообщения для оборудования без изображений
+        await sendSearchResults(ctx, result.items);
         return;
       }
 
@@ -576,12 +564,11 @@ export async function setupBot() {
           const currentPage = session.categoryResultsPage;
           
           await reply(ctx, `✅ **${categoryName}** — найдено: ${result.total} (стр. ${currentPage + 1}/${totalPages})`, { parse_mode: "Markdown" });
-          const answerText = answerGenerator.generatePlainText(result.items);
           
-          // Отправляем текст с клавиатурой пагинации
+          // Отправляем клавиатуру пагинации отдельным сообщением
           await reply(
             ctx, 
-            answerText,
+            "📄 Используйте кнопки для навигации:",
             buildCategoryResultsKeyboard({
               page: currentPage,
               totalPages: totalPages,
@@ -590,48 +577,9 @@ export async function setupBot() {
             })
           );
 
-          // Отправляем изображения для каждого найденного оборудования на текущей странице
-          for (const item of result.items) {
-            const imageUrl = answerGenerator.getImageUrl(item.id);
-            if (imageUrl) {
-              try {
-                // Отправляем изображение по URL
-                // Формат URL: https://domain.com/speq-images/{id}
-                // Telegram сам загрузит изображение по этой ссылке
-                const caption = `${item.name} (${item.brand}, ${item.category})`;
-                const message = await ctx.replyWithPhoto(imageUrl, { caption });
-                
-                // Сохраняем message_id в сессию
-                if (message?.message_id && ctx.from?.id) {
-                  const session = (await sessions.get(ctx.from.id)) ?? newSession(ctx.from.id);
-                  if (!session.messageIds) {
-                    session.messageIds = [];
-                  }
-                  session.messageIds.push(message.message_id);
-                  await sessions.set(session);
-                }
-              } catch (error: any) {
-                // Обрабатываем ошибку 429 (Too Many Requests) - добавляем задержку
-                const errorMessage = error?.response?.description || error?.message || "";
-                if (errorMessage.includes("Too Many Requests") || error?.response?.error_code === 429) {
-                  const retryAfter = error?.response?.parameters?.retry_after || 10;
-                  console.warn(`[Telegram] Rate limit (429) для ${item.id}, ждем ${retryAfter} секунд...`);
-                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-                  // Не повторяем попытку автоматически, просто пропускаем это изображение
-                } else {
-                  // Для других ошибок просто логируем
-                  console.warn(`[Telegram] Не удалось отправить изображение для ${item.id} (URL: ${imageUrl}):`, errorMessage);
-                }
-              }
-            } else {
-              // Логируем, если URL не найден (для отладки)
-              if (!imageBaseUrl) {
-                console.debug(`[Telegram] IMAGE_BASE_URL не задан, изображения не отправляются`);
-              } else {
-                console.debug(`[Telegram] Изображение не найдено для оборудования ${item.id} (локальный файл отсутствует)`);
-              }
-            }
-          }
+          // Отправляем результаты: фото с подписями для оборудования с изображениями,
+          // текстовые сообщения для оборудования без изображений
+          await sendSearchResults(ctx, result.items);
         }
         return;
       }
