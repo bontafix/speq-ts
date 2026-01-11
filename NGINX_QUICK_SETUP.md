@@ -6,8 +6,9 @@
 
 ```nginx
 # Добавьте в существующий server блок для domain.com
+# ВАЖНО: завершающий слеш в proxy_pass убирает префикс /speq-bot из пути
 location /speq-bot {
-    proxy_pass http://127.0.0.1:7504;
+    proxy_pass http://127.0.0.1:7504/;
     proxy_http_version 1.1;
     
     proxy_set_header Host $host;
