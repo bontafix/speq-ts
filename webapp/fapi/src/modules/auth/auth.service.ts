@@ -2,20 +2,7 @@ import { FastifyInstance } from "fastify";
 import { hashPassword, comparePassword } from "../../shared/lib/password";
 import { createToken, JwtPayload } from "../../shared/lib/jwt";
 import { ValidationError, UnauthorizedError } from "../../core/errors/app-error";
-
-/**
- * Интерфейс данных пользователя из БД
- */
-interface UserRow {
-  id: number;
-  username: string | null;
-  email: string | null;
-  password: string | null;
-  name: string | null;
-  status: boolean | null;
-  createdat: Date;
-  updatedat: Date;
-}
+import { UserRepository, UserRow } from "../users/user.repository";
 
 /**
  * Интерфейс пользователя для API
@@ -62,7 +49,11 @@ export interface AuthResponse {
  * Сервис авторизации
  */
 export class AuthService {
-  constructor(private fastify: FastifyInstance) {}
+  private userRepository: UserRepository;
+
+  constructor(private fastify: FastifyInstance) {
+    this.userRepository = new UserRepository(fastify);
+  }
 
   /**
    * Регистрация нового пользователя
@@ -77,7 +68,7 @@ export class AuthService {
     }
 
     // Проверка существования пользователя
-    const existingUser = await this.findUserByUsernameOrEmail(
+    const existingUser = await this.userRepository.findUserByUsernameOrEmailBasic(
       data.username || undefined,
       data.email || undefined,
     );
@@ -129,7 +120,7 @@ export class AuthService {
     }
 
     // Поиск пользователя
-    const userRow = await this.findUserByUsernameOrEmail(
+    const userRow = await this.userRepository.findUserByUsernameOrEmailBasic(
       data.username || undefined,
       data.email || undefined,
     );
@@ -191,18 +182,7 @@ export class AuthService {
     }
 
     // Получаем роли
-    const rolesResult = await this.fastify.db.query<{ name: string }>(
-      `
-        SELECT r.name
-        FROM user_roles ur
-        JOIN roles r ON ur.roleid = r.id
-        WHERE ur.userid = $1
-          AND r.status = true
-      `,
-      [userId],
-    );
-
-    const roles = rolesResult.rows.map((row) => row.name);
+    const roles = await this.userRepository.getUserRoles(userId);
 
     return {
       id: userRow.id,
@@ -216,41 +196,4 @@ export class AuthService {
     };
   }
 
-  /**
-   * Найти пользователя по username или email
-   */
-  private async findUserByUsernameOrEmail(
-    username?: string,
-    email?: string,
-  ): Promise<UserRow | null> {
-    if (username) {
-      const result = await this.fastify.db.query<UserRow>(
-        `
-          SELECT id, username, email, password, name, status, "createdAt", "updatedAt"
-          FROM users
-          WHERE username = $1
-        `,
-        [username],
-      );
-      if (result.rows.length > 0 && result.rows[0]) {
-        return result.rows[0];
-      }
-    }
-
-    if (email) {
-      const result = await this.fastify.db.query<UserRow>(
-        `
-          SELECT id, username, email, password, name, status, "createdAt", "updatedAt"
-          FROM users
-          WHERE email = $1
-        `,
-        [email],
-      );
-      if (result.rows.length > 0 && result.rows[0]) {
-        return result.rows[0];
-      }
-    }
-
-    return null;
-  }
 }

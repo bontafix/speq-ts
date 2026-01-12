@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken, JwtPayload } from "../../shared/lib/jwt";
 import { UnauthorizedError, ForbiddenError } from "../errors/app-error";
+import { UserRepository } from "../../modules/users/user.repository";
 
 // Расширение типов Fastify для добавления user в request
 declare module "fastify" {
@@ -35,7 +36,8 @@ export async function authenticate(
   try {
     const payload = verifyToken(token);
     // Получаем роли пользователя из БД
-    const roles = await getUserRoles(request.server.db, payload.userId);
+    const userRepository = new UserRepository(request.server);
+    const roles = await userRepository.getUserRoles(payload.userId);
     request.user = {
       ...payload,
       roles,
@@ -82,20 +84,3 @@ export function requireAnyRole(roleNames: string[]) {
   };
 }
 
-/**
- * Получить роли пользователя из БД
- */
-async function getUserRoles(pool: { query: (text: string, params: any[]) => Promise<any> }, userId: number): Promise<string[]> {
-  const result = await pool.query<{ name: string }>(
-    `
-      SELECT r.name
-      FROM user_roles ur
-      JOIN roles r ON ur.roleid = r.id
-      WHERE ur.userid = $1
-        AND r.status = true
-    `,
-    [userId],
-  );
-
-  return result.rows.map((row) => row.name);
-}
