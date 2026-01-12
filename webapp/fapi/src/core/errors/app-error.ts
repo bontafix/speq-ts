@@ -39,3 +39,21 @@ export class InternalServerError extends AppError {
     super(500, message, "INTERNAL_ERROR");
   }
 }
+
+/**
+ * Ошибка авторизации
+ */
+export class UnauthorizedError extends AppError {
+  constructor(message: string = "Unauthorized") {
+    super(401, message, "UNAUTHORIZED");
+  }
+}
+
+/**
+ * Ошибка доступа (нет прав)
+ */
+export class ForbiddenError extends AppError {
+  constructor(message: string = "Forbidden") {
+    super(403, message, "FORBIDDEN");
+  }
+}

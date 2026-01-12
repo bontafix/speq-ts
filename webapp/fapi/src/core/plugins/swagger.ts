@@ -21,9 +21,20 @@ export const swaggerPlugin: FastifyPluginAsync = async (fastify) => {
         },
       ],
       tags: [
+        { name: "Auth", description: "Авторизация и аутентификация" },
+        { name: "Users", description: "Управление пользователями" },
         { name: "Equipment", description: "Операции с оборудованием" },
         { name: "Health", description: "Проверка здоровья сервиса" },
       ],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+          },
+        },
+      },
     },
   });
 

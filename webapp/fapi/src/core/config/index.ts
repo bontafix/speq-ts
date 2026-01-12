@@ -7,6 +7,10 @@ export interface AppConfig {
   port: number;
   host: string;
   env: string;
+  jwt: {
+    secret: string;
+    expiresIn: string;
+  };
   db: {
     host: string;
     port: number;
@@ -24,10 +28,19 @@ export interface AppConfig {
  * Загрузка и валидация конфигурации из переменных окружения
  */
 export function loadConfig(): AppConfig {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+
   return {
     port: process.env.FAPI_PORT ? parseInt(process.env.FAPI_PORT, 10) : 3002,
     host: process.env.FAPI_HOST || "0.0.0.0",
     env: process.env.NODE_ENV || "development",
+    jwt: {
+      secret: jwtSecret,
+      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    },
     db: {
       host: process.env.PGHOST || "localhost",
       port: process.env.PGPORT ? parseInt(process.env.PGPORT, 10) : 5432,
