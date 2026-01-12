@@ -4,7 +4,9 @@ import path from "path";
 
 export default defineConfig({
   plugins: [vue()],
-  base: "/webapp/",
+  // Используем /speq-bot/webapp/ для работы через nginx на пути /speq-bot/webapp
+  // Для обычного использования через /webapp измените на base: "/webapp/"
+  base: "/speq-bot/webapp/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -12,11 +14,15 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    allowedHosts: [
+      "botfix.ru",
+      ".botfix.ru", // разрешаем все поддомены
+    ],
     proxy: {
-      "/webapp/api": {
+      "/speq-bot/webapp/api": {
         target: "http://localhost:3001",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/webapp\/api/, "/api"),
+        rewrite: (path) => path.replace(/^\/speq-bot\/webapp\/api/, "/api"),
       },
     },
   },

@@ -112,9 +112,32 @@ export async function setupBot() {
   }
 
   /**
+   * Получает URL для mini web app карточки оборудования
+   * @param equipmentId - ID оборудования
+   * @returns URL для mini web app или null, если базовый URL не задан
+   */
+  function getWebAppUrl(equipmentId: string): string | null {
+    const webappBaseUrl = process.env.WEBAPP_BASE_URL?.trim();
+    if (!webappBaseUrl) {
+      return null;
+    }
+    // Убираем завершающий слеш, если есть
+    let base = webappBaseUrl.replace(/\/$/, "");
+    
+    // Проверяем, заканчивается ли базовый URL на /webapp
+    // Если нет - добавляем /webapp
+    if (!base.endsWith("/webapp")) {
+      base = `${base}/webapp`;
+    }
+    
+    return `${base}/equipment/${equipmentId}`;
+  }
+
+  /**
    * Отправляет результаты поиска: фото с подписями для оборудования с изображениями,
    * текстовые сообщения для оборудования без изображений.
    * Обрабатывает rate limits и сохраняет message_id в сессию.
+   * Добавляет кнопку для открытия mini web app к каждому элементу.
    * 
    * @param ctx - контекст Telegram
    * @param items - список оборудования (EquipmentSummary)
@@ -125,12 +148,25 @@ export async function setupBot() {
       if (!item) continue;
       
       const imageUrl = answerGenerator.getImageUrl(item.id);
+      const webAppUrl = getWebAppUrl(item.id);
+      console.log(webAppUrl);
+      
+      // Формируем клавиатуру с кнопкой web app, если URL доступен
+      const keyboard = webAppUrl 
+        ? Markup.inlineKeyboard([
+            [Markup.button.webApp("📱 Открыть карточку", webAppUrl)]
+          ])
+        : undefined;
       
       if (imageUrl) {
         // Отправляем фото с полной подписью
         try {
           const caption = formatCategoryEquipmentPhotoCaption(item, index);
-          const message = await ctx.replyWithPhoto(imageUrl, { caption });
+          const extra: any = { caption };
+          if (keyboard) {
+            extra.reply_markup = keyboard.reply_markup;
+          }
+          const message = await ctx.replyWithPhoto(imageUrl, extra);
           
           // Сохраняем message_id в сессию
           if (message?.message_id && ctx.from?.id) {
@@ -158,7 +194,8 @@ export async function setupBot() {
         // Для оборудования без фото отправляем текстовое сообщение
         const text = formatCategoryEquipmentText(item, index);
         try {
-          const message = await reply(ctx, text);
+          const extra = keyboard ? keyboard : undefined;
+          const message = await reply(ctx, text, extra);
           // message_id уже сохранен в функции reply
         } catch (error: any) {
           console.warn(`[Telegram] Не удалось отправить текстовое сообщение для ${item.id}:`, error?.message);

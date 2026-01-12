@@ -145,13 +145,13 @@ export function formatCategoryEquipmentPhotoCaption(item: EquipmentSummary, inde
   // caption += `Цена: ${price}`;
   
   // Добавляем параметры, каждый с новой строки
-  console.log("formatCategoryEquipmentPhotoCaption", { 
-    id: item.id, 
-    mainParameters: item.mainParameters, 
-    mainParametersType: typeof item.mainParameters,
-    mainParametersKeys: item.mainParameters ? Object.keys(item.mainParameters) : null,
-    mainParametersLength: item.mainParameters ? Object.keys(item.mainParameters).length : 0
-  });
+  // console.log("formatCategoryEquipmentPhotoCaption", { 
+  //   id: item.id, 
+  //   mainParameters: item.mainParameters, 
+  //   mainParametersType: typeof item.mainParameters,
+  //   mainParametersKeys: item.mainParameters ? Object.keys(item.mainParameters) : null,
+  //   mainParametersLength: item.mainParameters ? Object.keys(item.mainParameters).length : 0
+  // });
   
   if (item.mainParameters && typeof item.mainParameters === 'object' && Object.keys(item.mainParameters).length > 0) {
     const maxCount = getParamsFullCount();
@@ -184,13 +184,13 @@ export function formatCategoryEquipmentText(item: EquipmentSummary, index: numbe
   let text = `${index + 1}. ${item.name} (${item.brand}, ${item.category}) — ${price}`;
   
   // Добавляем параметры, каждый с новой строки
-  console.log("formatCategoryEquipmentText", { 
-    id: item.id, 
-    mainParameters: item.mainParameters, 
-    mainParametersType: typeof item.mainParameters,
-    mainParametersKeys: item.mainParameters ? Object.keys(item.mainParameters) : null,
-    mainParametersLength: item.mainParameters ? Object.keys(item.mainParameters).length : 0
-  });
+  // console.log("formatCategoryEquipmentText", { 
+  //   id: item.id, 
+  //   mainParameters: item.mainParameters, 
+  //   mainParametersType: typeof item.mainParameters,
+  //   mainParametersKeys: item.mainParameters ? Object.keys(item.mainParameters) : null,
+  //   mainParametersLength: item.mainParameters ? Object.keys(item.mainParameters).length : 0
+  // });
   
   if (item.mainParameters && typeof item.mainParameters === 'object' && Object.keys(item.mainParameters).length > 0) {
     const maxCount = getParamsFullCount();

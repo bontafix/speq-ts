@@ -17,7 +17,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHistory("/webapp/"),
+  history: createWebHistory("/speq-bot/webapp/"),
   routes,
 });
 

@@ -152,7 +152,7 @@ const loadEquipment = async () => {
   error.value = null;
 
   try {
-    const response = await axios.get<Equipment>(`/webapp/api/equipment/${id}`);
+    const response = await axios.get<Equipment>(`/speq-bot/webapp/api/equipment/${id}`);
     equipment.value = response.data;
   } catch (err: any) {
     if (err.response?.status === 404) {
