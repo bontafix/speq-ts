@@ -1,0 +1,39 @@
+import { FastifyPluginAsync } from "fastify";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
+import { config } from "../config";
+
+/**
+ * Плагин Swagger/OpenAPI документации
+ */
+export const swaggerPlugin: FastifyPluginAsync = async (fastify) => {
+  await fastify.register(swagger, {
+    openapi: {
+      info: {
+        title: "Equipment Catalog API (Fastify)",
+        description: "REST API для каталога оборудования",
+        version: "1.0.0",
+      },
+      servers: [
+        {
+          url: `http://localhost:${config.port}`,
+          description: "Development server",
+        },
+      ],
+      tags: [
+        { name: "Equipment", description: "Операции с оборудованием" },
+        { name: "Health", description: "Проверка здоровья сервиса" },
+      ],
+    },
+  });
+
+  await fastify.register(swaggerUi, {
+    routePrefix: "/api-docs",
+    uiConfig: {
+      docExpansion: "list",
+      deepLinking: false,
+    },
+    staticCSP: true,
+    transformStaticCSP: (header) => header,
+  });
+};
