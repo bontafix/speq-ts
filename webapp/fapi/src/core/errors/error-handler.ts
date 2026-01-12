@@ -1,10 +1,11 @@
-import { FastifyError, FastifyReply, FastifyRequest } from "fastify";
+import { FastifyError, FastifyReply, FastifyRequest, FastifyInstance } from "fastify";
 import { AppError } from "./app-error";
 
 /**
  * Глобальный обработчик ошибок
  */
 export async function errorHandler(
+  this: FastifyInstance,
   error: FastifyError | AppError,
   request: FastifyRequest,
   reply: FastifyReply,

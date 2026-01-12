@@ -36,11 +36,13 @@ export class AuthController {
    * Получить текущего пользователя
    */
   async me(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    if (!request.user) {
+    if (!request.user || typeof request.user === "string" || Buffer.isBuffer(request.user)) {
       throw new Error("User not authenticated");
     }
 
-    const user = await this.service.getUserById(request.user.userId);
+    // TypeScript guard: проверяем что user имеет нужную структуру
+    const authenticatedUser = request.user as { userId: number; roles: string[] };
+    const user = await this.service.getUserById(authenticatedUser.userId);
     sendSuccess(reply, user);
   }
 }

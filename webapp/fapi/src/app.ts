@@ -15,20 +15,22 @@ import { usersPlugin } from "./modules/users";
  * Создание и настройка Fastify приложения
  */
 export async function createApp(): Promise<FastifyInstance> {
+  const loggerConfig: any = {
+    level: config.env === "development" ? "info" : "warn",
+  };
+
+  if (config.env === "development") {
+    loggerConfig.transport = {
+      target: "pino-pretty",
+      options: {
+        translateTime: "HH:MM:ss Z",
+        ignore: "pid,hostname",
+      },
+    };
+  }
+
   const app = Fastify({
-    logger: {
-      level: config.env === "development" ? "info" : "warn",
-      transport:
-        config.env === "development"
-          ? {
-              target: "pino-pretty",
-              options: {
-                translateTime: "HH:MM:ss Z",
-                ignore: "pid,hostname",
-              },
-            }
-          : undefined,
-    },
+    logger: loggerConfig,
   });
 
   // Регистрация плагинов ядра

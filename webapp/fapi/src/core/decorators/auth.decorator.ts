@@ -3,10 +3,10 @@ import { verifyToken, JwtPayload } from "../../shared/lib/jwt";
 import { UnauthorizedError, ForbiddenError } from "../errors/app-error";
 import { UserRepository } from "../../modules/users/user.repository";
 
-// Расширение типов Fastify для добавления user в request
-declare module "fastify" {
-  interface FastifyRequest {
-    user?: JwtPayload & { roles: string[] };
+// Расширение типов @fastify/jwt для добавления user в request
+declare module "@fastify/jwt" {
+  interface FastifyJWT {
+    user: JwtPayload & { roles: string[] };
   }
 }
 

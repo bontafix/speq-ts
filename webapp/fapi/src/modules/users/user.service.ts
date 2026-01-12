@@ -77,8 +77,8 @@ export class UserService {
         email: row.email,
         name: row.name,
         status: row.status,
-        limitDocument: row.limit_document,
-        limitSizePdf: row.limit_size_pdf,
+        limitDocument: row.limit_document ?? null,
+        limitSizePdf: row.limit_size_pdf ?? null,
         roles,
         createdAt: row.createdat.toISOString(),
         updatedAt: row.updatedat.toISOString(),
@@ -105,7 +105,7 @@ export class UserService {
       throw new NotFoundError("User not found");
     }
 
-    const row = result.rows[0];
+    const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
     return {
@@ -114,8 +114,8 @@ export class UserService {
       email: row.email,
       name: row.name,
       status: row.status,
-      limitDocument: row.limit_document,
-      limitSizePdf: row.limit_size_pdf,
+      limitDocument: row.limit_document ?? null,
+      limitSizePdf: row.limit_size_pdf ?? null,
       roles,
       createdAt: row.createdat.toISOString(),
       updatedAt: row.updatedat.toISOString(),
@@ -163,7 +163,7 @@ export class UserService {
       ],
     );
 
-    const row = result.rows[0];
+    const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
     return {
@@ -172,8 +172,8 @@ export class UserService {
       email: row.email,
       name: row.name,
       status: row.status,
-      limitDocument: row.limit_document,
-      limitSizePdf: row.limit_size_pdf,
+      limitDocument: row.limit_document ?? null,
+      limitSizePdf: row.limit_size_pdf ?? null,
       roles,
       createdAt: row.createdat.toISOString(),
       updatedAt: row.updatedat.toISOString(),
@@ -250,7 +250,7 @@ export class UserService {
       values,
     );
 
-    const row = result.rows[0];
+    const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
     return {
@@ -259,8 +259,8 @@ export class UserService {
       email: row.email,
       name: row.name,
       status: row.status,
-      limitDocument: row.limit_document,
-      limitSizePdf: row.limit_size_pdf,
+      limitDocument: row.limit_document ?? null,
+      limitSizePdf: row.limit_size_pdf ?? null,
       roles,
       createdAt: row.createdat.toISOString(),
       updatedAt: row.updatedat.toISOString(),
