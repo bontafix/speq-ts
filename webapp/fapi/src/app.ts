@@ -11,6 +11,9 @@ import { equipmentPlugin } from "./modules/equipment";
 import { healthPlugin } from "./modules/health";
 import { authPlugin } from "./modules/auth";
 import { usersPlugin } from "./modules/users";
+import { categoriesPlugin } from "./modules/categories";
+import { parameterDictionaryPlugin } from "./modules/parameter-dictionary";
+import { brandsPlugin } from "./modules/brands";
 
 /**
  * Создание и настройка Fastify приложения
@@ -60,6 +63,9 @@ export async function createApp(): Promise<FastifyInstance> {
         { name: "Users", description: "Управление пользователями" },
         { name: "Equipment", description: "Операции с оборудованием" },
         { name: "Health", description: "Проверка здоровья сервиса" },
+        { name: "Categories", description: "Управление категориями" },
+        { name: "Parameter Dictionary", description: "Управление словарем параметров" },
+        { name: "Brands", description: "Управление брендами" },
       ],
       components: {
         securitySchemes: {
@@ -92,6 +98,9 @@ export async function createApp(): Promise<FastifyInstance> {
   await app.register(authPlugin);
   await app.register(usersPlugin);
   await app.register(equipmentPlugin);
+  await app.register(categoriesPlugin);
+  await app.register(parameterDictionaryPlugin);
+  await app.register(brandsPlugin);
   await app.register(healthPlugin);
 
   // Глобальный обработчик ошибок
