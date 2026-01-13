@@ -59,7 +59,18 @@ export class UserService {
    * Получить всех пользователей
    */
   async getAll(): Promise<User[]> {
-    const result = await this.fastify.db.query<UserRow>(
+    const result = await this.fastify.db.query<{
+      id: number;
+      username: string | null;
+      email: string | null;
+      password: string | null;
+      name: string | null;
+      status: boolean | null;
+      limit_document: number | null;
+      limit_size_pdf: number | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `
         SELECT id, username, email, password, name, status, limit_document, limit_size_pdf, "createdAt", "updatedAt"
         FROM users
@@ -71,6 +82,15 @@ export class UserService {
 
     for (const row of result.rows) {
       const roles = await this.userRepository.getUserRoles(row.id);
+      
+      // Безопасное преобразование дат
+      const createdAt = row.createdAt instanceof Date 
+        ? row.createdAt.toISOString() 
+        : new Date(row.createdAt).toISOString();
+      const updatedAt = row.updatedAt instanceof Date 
+        ? row.updatedAt.toISOString() 
+        : new Date(row.updatedAt).toISOString();
+      
       users.push({
         id: row.id,
         username: row.username,
@@ -80,8 +100,8 @@ export class UserService {
         limitDocument: row.limit_document ?? null,
         limitSizePdf: row.limit_size_pdf ?? null,
         roles,
-        createdAt: row.createdat.toISOString(),
-        updatedAt: row.updatedat.toISOString(),
+        createdAt,
+        updatedAt,
       });
     }
 
@@ -92,7 +112,18 @@ export class UserService {
    * Получить пользователя по ID
    */
   async getById(userId: number): Promise<User> {
-    const result = await this.fastify.db.query<UserRow>(
+    const result = await this.fastify.db.query<{
+      id: number;
+      username: string | null;
+      email: string | null;
+      password: string | null;
+      name: string | null;
+      status: boolean | null;
+      limit_document: number | null;
+      limit_size_pdf: number | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `
         SELECT id, username, email, password, name, status, limit_document, limit_size_pdf, "createdAt", "updatedAt"
         FROM users
@@ -108,6 +139,14 @@ export class UserService {
     const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
+    // Безопасное преобразование дат
+    const createdAt = row.createdAt instanceof Date 
+      ? row.createdAt.toISOString() 
+      : new Date(row.createdAt).toISOString();
+    const updatedAt = row.updatedAt instanceof Date 
+      ? row.updatedAt.toISOString() 
+      : new Date(row.updatedAt).toISOString();
+
     return {
       id: row.id,
       username: row.username,
@@ -117,8 +156,8 @@ export class UserService {
       limitDocument: row.limit_document ?? null,
       limitSizePdf: row.limit_size_pdf ?? null,
       roles,
-      createdAt: row.createdat.toISOString(),
-      updatedAt: row.updatedat.toISOString(),
+      createdAt,
+      updatedAt,
     };
   }
 
@@ -146,7 +185,18 @@ export class UserService {
     const hashedPassword = await hashPassword(data.password);
 
     // Создание
-    const result = await this.fastify.db.query<UserRow>(
+    const result = await this.fastify.db.query<{
+      id: number;
+      username: string | null;
+      email: string | null;
+      password: string | null;
+      name: string | null;
+      status: boolean | null;
+      limit_document: number | null;
+      limit_size_pdf: number | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `
         INSERT INTO users (username, email, password, name, status, limit_document, limit_size_pdf)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -166,6 +216,14 @@ export class UserService {
     const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
+    // Безопасное преобразование дат
+    const createdAt = row.createdAt instanceof Date 
+      ? row.createdAt.toISOString() 
+      : new Date(row.createdAt).toISOString();
+    const updatedAt = row.updatedAt instanceof Date 
+      ? row.updatedAt.toISOString() 
+      : new Date(row.updatedAt).toISOString();
+
     return {
       id: row.id,
       username: row.username,
@@ -175,8 +233,8 @@ export class UserService {
       limitDocument: row.limit_document ?? null,
       limitSizePdf: row.limit_size_pdf ?? null,
       roles,
-      createdAt: row.createdat.toISOString(),
-      updatedAt: row.updatedat.toISOString(),
+      createdAt,
+      updatedAt,
     };
   }
 
@@ -240,7 +298,18 @@ export class UserService {
     updates.push(`"updatedAt" = CURRENT_TIMESTAMP`);
     values.push(userId);
 
-    const result = await this.fastify.db.query<UserRow>(
+    const result = await this.fastify.db.query<{
+      id: number;
+      username: string | null;
+      email: string | null;
+      password: string | null;
+      name: string | null;
+      status: boolean | null;
+      limit_document: number | null;
+      limit_size_pdf: number | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `
         UPDATE users
         SET ${updates.join(", ")}
@@ -253,6 +322,14 @@ export class UserService {
     const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
+    // Безопасное преобразование дат
+    const createdAt = row.createdAt instanceof Date 
+      ? row.createdAt.toISOString() 
+      : new Date(row.createdAt).toISOString();
+    const updatedAt = row.updatedAt instanceof Date 
+      ? row.updatedAt.toISOString() 
+      : new Date(row.updatedAt).toISOString();
+
     return {
       id: row.id,
       username: row.username,
@@ -262,8 +339,8 @@ export class UserService {
       limitDocument: row.limit_document ?? null,
       limitSizePdf: row.limit_size_pdf ?? null,
       roles,
-      createdAt: row.createdat.toISOString(),
-      updatedAt: row.updatedat.toISOString(),
+      createdAt,
+      updatedAt,
     };
   }
 

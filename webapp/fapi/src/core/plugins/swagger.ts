@@ -16,8 +16,8 @@ export const swaggerPlugin: FastifyPluginAsync = async (fastify) => {
       },
       servers: [
         {
-          url: `http://localhost:${config.port}`,
-          description: "Development server",
+          url: config.domain,
+          description: config.env === "development" ? "Development server" : "Production server",
         },
       ],
       tags: [
@@ -45,6 +45,12 @@ export const swaggerPlugin: FastifyPluginAsync = async (fastify) => {
       deepLinking: false,
     },
     staticCSP: true,
-    transformStaticCSP: (header) => header,
+    transformStaticCSP: (header) => {
+      // Разрешаем inline стили для Swagger UI
+      return header.replace(
+        "style-src 'self' https:",
+        "style-src 'self' https: 'unsafe-inline'"
+      );
+    },
   });
 };

@@ -22,8 +22,7 @@ export interface User {
  * Интерфейс данных регистрации
  */
 export interface RegisterData {
-  username?: string;
-  email?: string;
+  email: string;
   password: string;
   name?: string;
 }
@@ -32,8 +31,7 @@ export interface RegisterData {
  * Интерфейс данных входа
  */
 export interface LoginData {
-  username?: string;
-  email?: string;
+  email: string;
   password: string;
 }
 
@@ -60,8 +58,8 @@ export class AuthService {
    */
   async register(data: RegisterData): Promise<AuthResponse> {
     // Валидация
-    if (!data.username && !data.email) {
-      throw new ValidationError("Username or email is required");
+    if (!data.email) {
+      throw new ValidationError("Email is required");
     }
     if (!data.password || data.password.length < 6) {
       throw new ValidationError("Password must be at least 6 characters");
@@ -69,11 +67,11 @@ export class AuthService {
 
     // Проверка существования пользователя
     const existingUser = await this.userRepository.findUserByUsernameOrEmailBasic(
-      data.username || undefined,
-      data.email || undefined,
+      undefined,
+      data.email,
     );
     if (existingUser) {
-      throw new ValidationError("User with this username or email already exists");
+      throw new ValidationError("User with this email already exists");
     }
 
     // Хеширование пароля
@@ -82,11 +80,11 @@ export class AuthService {
     // Создание пользователя
     const result = await this.fastify.db.query<UserRow>(
       `
-        INSERT INTO users (username, email, password, name, status)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (email, password, name, status)
+        VALUES ($1, $2, $3, $4)
         RETURNING id, username, email, password, name, status, "createdAt", "updatedAt"
       `,
-      [data.username || null, data.email || null, hashedPassword, data.name || null, true],
+      [data.email, hashedPassword, data.name || null, true],
     );
 
     const userRow = result.rows[0];
@@ -112,17 +110,17 @@ export class AuthService {
    * Вход пользователя
    */
   async login(data: LoginData): Promise<AuthResponse> {
-    if (!data.username && !data.email) {
-      throw new ValidationError("Username or email is required");
+    if (!data.email) {
+      throw new ValidationError("Email is required");
     }
     if (!data.password) {
       throw new ValidationError("Password is required");
     }
 
-    // Поиск пользователя
+    // Поиск пользователя по email
     const userRow = await this.userRepository.findUserByUsernameOrEmailBasic(
-      data.username || undefined,
-      data.email || undefined,
+      undefined,
+      data.email,
     );
 
     if (!userRow) {
@@ -163,7 +161,16 @@ export class AuthService {
    * Получить пользователя по ID
    */
   async getUserById(userId: number): Promise<User> {
-    const result = await this.fastify.db.query<UserRow>(
+    const result = await this.fastify.db.query<{
+      id: number;
+      username: string | null;
+      email: string | null;
+      password: string | null;
+      name: string | null;
+      status: boolean | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `
         SELECT id, username, email, password, name, status, "createdAt", "updatedAt"
         FROM users
@@ -184,6 +191,14 @@ export class AuthService {
     // Получаем роли
     const roles = await this.userRepository.getUserRoles(userId);
 
+    // Безопасное преобразование дат
+    const createdAt = userRow.createdAt instanceof Date 
+      ? userRow.createdAt.toISOString() 
+      : new Date(userRow.createdAt).toISOString();
+    const updatedAt = userRow.updatedAt instanceof Date 
+      ? userRow.updatedAt.toISOString() 
+      : new Date(userRow.updatedAt).toISOString();
+
     return {
       id: userRow.id,
       username: userRow.username,
@@ -191,8 +206,8 @@ export class AuthService {
       name: userRow.name,
       status: userRow.status,
       roles,
-      createdAt: userRow.createdat.toISOString(),
-      updatedAt: userRow.updatedat.toISOString(),
+      createdAt,
+      updatedAt,
     };
   }
 

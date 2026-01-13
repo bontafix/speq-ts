@@ -20,8 +20,17 @@ export const authPlugin: FastifyPluginAsync = async (fastify) => {
         description: "Регистрация нового пользователя",
         tags: ["Auth"],
         body: registerSchema,
+        // Не указываем security для публичного эндпоинта
         response: {
-          201: authResponseSchema,
+          201: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              data: authResponseSchema,
+              timestamp: { type: "string" },
+            },
+            required: ["success", "data", "timestamp"],
+          },
           400: errorResponseSchema,
         },
       },
@@ -39,8 +48,17 @@ export const authPlugin: FastifyPluginAsync = async (fastify) => {
         description: "Вход пользователя",
         tags: ["Auth"],
         body: loginSchema,
+        // Не указываем security для публичного эндпоинта
         response: {
-          200: authResponseSchema,
+          200: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              data: authResponseSchema,
+              timestamp: { type: "string" },
+            },
+            required: ["success", "data", "timestamp"],
+          },
           401: errorResponseSchema,
         },
       },

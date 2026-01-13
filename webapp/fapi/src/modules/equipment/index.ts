@@ -27,7 +27,15 @@ export const equipmentPlugin: FastifyPluginAsync = async (fastify) => {
         tags: ["Equipment"],
         params: getEquipmentByIdParamsSchema,
         response: {
-          200: equipmentCardSchema,
+          200: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              data: equipmentCardSchema,
+              timestamp: { type: "string" },
+            },
+            required: ["success", "data", "timestamp"],
+          },
           404: errorResponseSchema,
           500: errorResponseSchema,
         },

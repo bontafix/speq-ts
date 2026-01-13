@@ -8,10 +8,6 @@
 export const registerSchema = {
   type: "object",
   properties: {
-    username: {
-      type: "string",
-      description: "Имя пользователя",
-    },
     email: {
       type: "string",
       format: "email",
@@ -27,8 +23,7 @@ export const registerSchema = {
       description: "Полное имя",
     },
   },
-  required: ["password"],
-  anyOf: [{ required: ["username"] }, { required: ["email"] }],
+  required: ["email", "password"],
 } as const;
 
 /**
@@ -37,10 +32,6 @@ export const registerSchema = {
 export const loginSchema = {
   type: "object",
   properties: {
-    username: {
-      type: "string",
-      description: "Имя пользователя",
-    },
     email: {
       type: "string",
       format: "email",
@@ -51,8 +42,7 @@ export const loginSchema = {
       description: "Пароль",
     },
   },
-  required: ["password"],
-  anyOf: [{ required: ["username"] }, { required: ["email"] }],
+  required: ["email", "password"],
 } as const;
 
 /**

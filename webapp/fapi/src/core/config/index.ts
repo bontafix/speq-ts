@@ -50,6 +50,7 @@ export interface AppConfig {
   port: number;
   host: string;
   env: string;
+  domain: string; // Домен для режима разработки (используется в Swagger и CORS)
   jwt: {
     secret: string;
     expiresIn: string;
@@ -76,10 +77,17 @@ export function loadConfig(): AppConfig {
     throw new Error("JWT_SECRET environment variable is required");
   }
 
+  const env = process.env.NODE_ENV || "development";
+  const port = process.env.FAPI_PORT ? parseInt(process.env.FAPI_PORT, 10) : 3002;
+  
+  // Определяем домен: в режиме разработки используем FAPI_DOMAIN, иначе localhost
+  const domain = process.env.FAPI_DOMAIN || `http://localhost:${port}`;
+  
   return {
-    port: process.env.FAPI_PORT ? parseInt(process.env.FAPI_PORT, 10) : 3002,
+    port: port,
     host: process.env.FAPI_HOST || "0.0.0.0",
-    env: process.env.NODE_ENV || "development",
+    env: env,
+    domain: domain,
     jwt: {
       secret: jwtSecret,
       expiresIn: process.env.JWT_EXPIRES_IN || "7d",

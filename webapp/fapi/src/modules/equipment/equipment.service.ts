@@ -77,6 +77,14 @@ export class EquipmentService {
 
     const equipment = result.rows[0];
 
+    // Безопасное преобразование дат
+    const createdAt = equipment.created_at instanceof Date 
+      ? equipment.created_at.toISOString() 
+      : new Date(equipment.created_at).toISOString();
+    const updatedAt = equipment.updated_at instanceof Date 
+      ? equipment.updated_at.toISOString() 
+      : new Date(equipment.updated_at).toISOString();
+
     return {
       id: equipment.id,
       name: equipment.name,
@@ -88,8 +96,8 @@ export class EquipmentService {
       price: equipment.price,
       mainParameters: equipment.main_parameters || {},
       normalizedParameters: equipment.normalized_parameters || {},
-      createdAt: equipment.created_at.toISOString(),
-      updatedAt: equipment.updated_at.toISOString(),
+      createdAt,
+      updatedAt,
     };
   }
 }
