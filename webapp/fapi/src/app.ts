@@ -14,6 +14,7 @@ import { usersPlugin } from "./modules/users";
 import { categoriesPlugin } from "./modules/categories";
 import { parameterDictionaryPlugin } from "./modules/parameter-dictionary";
 import { brandsPlugin } from "./modules/brands";
+import { versionPlugin } from "./modules/version";
 
 /**
  * Создание и настройка Fastify приложения
@@ -66,6 +67,7 @@ export async function createApp(): Promise<FastifyInstance> {
         { name: "Categories", description: "Управление категориями" },
         { name: "Parameter Dictionary", description: "Управление словарем параметров" },
         { name: "Brands", description: "Управление брендами" },
+        { name: "Version", description: "Версия API" },
       ],
       components: {
         securitySchemes: {
@@ -102,6 +104,7 @@ export async function createApp(): Promise<FastifyInstance> {
   await app.register(parameterDictionaryPlugin);
   await app.register(brandsPlugin);
   await app.register(healthPlugin);
+  await app.register(versionPlugin);
 
   // Глобальный обработчик ошибок
   app.setErrorHandler(errorHandler);
