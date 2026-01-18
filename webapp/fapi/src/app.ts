@@ -142,6 +142,48 @@ export async function createApp(): Promise<FastifyInstance> {
 
   // Глобальный обработчик ошибок
   app.setErrorHandler(errorHandler);
+  
+  // Хук onError для добавления CORS заголовков при ошибках
+  app.addHook('onError', async (request, reply, error) => {
+    const origin = request.headers.origin;
+    const allowedOrigins = [
+      'http://localhost:9527',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://botfix.ru'
+    ];
+    
+    // Добавляем CORS заголовки даже при ошибках
+    if (origin && allowedOrigins.includes(origin)) {
+      reply.header('Access-Control-Allow-Origin', origin);
+      reply.header('Access-Control-Allow-Credentials', 'true');
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+  });
+  
+  // Хук onSend для финальной проверки CORS заголовков
+  app.addHook('onSend', async (request, reply, payload) => {
+    const origin = request.headers.origin;
+    const allowedOrigins = [
+      'http://localhost:9527',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://botfix.ru'
+    ];
+    
+    // Если заголовки отсутствуют, добавляем их (на всякий случай)
+    if (!reply.getHeader('access-control-allow-origin')) {
+      if (origin && allowedOrigins.includes(origin)) {
+        reply.header('Access-Control-Allow-Origin', origin);
+        reply.header('Access-Control-Allow-Credentials', 'true');
+        reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      }
+    }
+    
+    return payload;
+  });
 
   return app;
 }
