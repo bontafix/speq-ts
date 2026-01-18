@@ -7,7 +7,7 @@ import { FastifyPluginAsync } from "fastify";
 export const versionPlugin: FastifyPluginAsync = async (fastify) => {
   // Version endpoint
   fastify.get(
-    "/v1/version",
+    "/version",
     {
       schema: {
         description: "Получение версии API",

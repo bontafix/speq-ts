@@ -39,9 +39,43 @@ export async function createApp(): Promise<FastifyInstance> {
     trustProxy: true, // Доверять заголовкам X-Forwarded-* от nginx прокси
   });
 
+  // Глобальный хук для обработки CORS (до регистрации плагинов)
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin;
+    
+    // Разрешенные origins
+    const allowedOrigins = [
+      'http://localhost:9527',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://botfix.ru'
+    ];
+    
+    // Обработка OPTIONS запроса (preflight)
+    if (request.method === 'OPTIONS') {
+      if (origin && allowedOrigins.includes(origin)) {
+        reply.header('Access-Control-Allow-Origin', origin);
+        reply.header('Access-Control-Allow-Credentials', 'true');
+        reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        reply.header('Access-Control-Max-Age', '86400'); // 24 часа
+        reply.code(204).send();
+        return;
+      }
+    }
+    
+    // Добавляем CORS заголовки для всех запросов
+    if (origin && allowedOrigins.includes(origin)) {
+      reply.header('Access-Control-Allow-Origin', origin);
+      reply.header('Access-Control-Allow-Credentials', 'true');
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+  });
+
   // Регистрация плагинов ядра
-  await app.register(databasePlugin);
   await app.register(corsPlugin);
+  await app.register(databasePlugin);
   await app.register(jwtPlugin);
   await app.register(loggerPlugin);
 

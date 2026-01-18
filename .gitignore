@@ -2,6 +2,11 @@
 *.png
 *.jpg
 
+*.dump
+*.sql
+*.backup
+*.pdf
+
 
 # Logs
 logs
