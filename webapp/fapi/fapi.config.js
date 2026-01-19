@@ -30,7 +30,7 @@ module.exports = {
       max_memory_restart: "500M",
       env: {
         NODE_ENV: "production",
-        FAPI_PORT: "7507",
+        FAPI_PORT: "7506",
       },
       error_file: "./logs/fapi-error.log",
       out_file: "./logs/fapi-out.log",
