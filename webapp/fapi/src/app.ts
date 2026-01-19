@@ -121,7 +121,8 @@ export async function createApp(): Promise<FastifyInstance> {
       docExpansion: "list",
       deepLinking: false,
     },
-    staticCSP: true,
+    // staticCSP: true,
+    staticCSP: config.env === "production" ? true : false, 
     transformStaticCSP: (header) => {
       return header.replace(
         "style-src 'self' https:",
