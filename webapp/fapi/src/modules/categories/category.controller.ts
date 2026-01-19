@@ -1,5 +1,11 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { CategoryService, CreateCategoryData, UpdateCategoryData, Category } from "./category.service";
+import {
+  CategoryService,
+  CreateCategoryData,
+  UpdateCategoryData,
+  Category,
+  PaginatedCategoryResult,
+} from "./category.service";
 import { sendSuccess } from "../../shared/utils/api-response";
 
 /**
@@ -16,11 +22,15 @@ export class CategoryController {
   constructor(private service: CategoryService) {}
 
   /**
-   * Получить все категории
+   * Получить список категорий с пагинацией
    */
-  async getAll(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const categories = await this.service.getAll();
-    sendSuccess<Category[]>(reply, categories);
+  async getAll(
+    request: FastifyRequest<{ Querystring: { page?: number; limit?: number } }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const { page = 1, limit = 20 } = request.query || {};
+    const result = await this.service.getAll(page, limit);
+    sendSuccess<PaginatedCategoryResult>(reply, result);
   }
 
   /**

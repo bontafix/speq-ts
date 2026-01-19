@@ -32,15 +32,41 @@ export interface UpdateCategoryData {
 }
 
 /**
+ * Результат пагинации категорий
+ */
+export interface PaginatedCategoryResult {
+  items: Category[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+/**
  * Сервис управления категориями
  */
 export class CategoryService {
   constructor(private fastify: FastifyInstance) {}
 
   /**
-   * Получить все категории
+   * Получить список категорий с пагинацией
    */
-  async getAll(): Promise<Category[]> {
+  async getAll(page: number = 1, limit: number = 20): Promise<PaginatedCategoryResult> {
+    const safePage = page > 0 ? page : 1;
+    const safeLimit = limit > 0 ? limit : 20;
+    const offset = (safePage - 1) * safeLimit;
+
+    // Общее количество категорий
+    const countResult = await this.fastify.db.query<{ count: string }>(
+      `
+        SELECT COUNT(*)::text AS count
+        FROM categories
+      `,
+    );
+
+    const total = parseInt(countResult.rows[0]?.count || "0", 10);
+
+    // Данные текущей страницы
     const result = await this.fastify.db.query<{
       id: number;
       name: string;
@@ -53,16 +79,20 @@ export class CategoryService {
         SELECT id, name, parent_id, is_active, created_at, updated_at
         FROM categories
         ORDER BY id
+        LIMIT $1 OFFSET $2
       `,
+      [safeLimit, offset],
     );
 
-    return result.rows.map((row) => {
-      const createdAt = row.created_at instanceof Date 
-        ? row.created_at.toISOString() 
-        : new Date(row.created_at).toISOString();
-      const updatedAt = row.updated_at instanceof Date 
-        ? row.updated_at.toISOString() 
-        : new Date(row.updated_at).toISOString();
+    const items: Category[] = result.rows.map((row) => {
+      const createdAt =
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : new Date(row.created_at).toISOString();
+      const updatedAt =
+        row.updated_at instanceof Date
+          ? row.updated_at.toISOString()
+          : new Date(row.updated_at).toISOString();
 
       return {
         id: row.id,
@@ -73,6 +103,16 @@ export class CategoryService {
         updatedAt,
       };
     });
+
+    const totalPages = Math.ceil(total / safeLimit) || 1;
+
+    return {
+      items,
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages,
+    };
   }
 
   /**

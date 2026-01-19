@@ -5,41 +5,39 @@ import {
   categorySchema,
   createCategorySchema,
   updateCategorySchema,
+  getCategoryListQuerySchema,
+  paginatedCategoryListSchema,
 } from "./category.schema";
 import { errorResponseSchema } from "../../core/schemas/shared";
-import { requireRole } from "../../core/decorators/auth.decorator";
 
 /**
  * Плагин модуля Categories
- * Все эндпоинты требуют роль 'admin'
  */
 export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
   const service = new CategoryService(fastify);
   const controller = new CategoryController(service);
 
-  // Получить все категории
-  fastify.get(
+  // Получить список категорий с пагинацией
+  fastify.get<{
+    Querystring: { page?: number; limit?: number };
+  }>(
     "/categories",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Получить все категории (требует роль admin)",
+        description: "Получить список категорий с пагинацией",
         tags: ["Categories"],
-        security: [{ bearerAuth: [] }],
+        querystring: getCategoryListQuerySchema,
         response: {
           200: {
             type: "object",
             properties: {
               success: { type: "boolean" },
-              data: {
-                type: "array",
-                items: categorySchema,
-              },
+              data: paginatedCategoryListSchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -52,11 +50,9 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.get<{ Params: { id: string } }>(
     "/categories/:id",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Получить категорию по ID (требует роль admin)",
+        description: "Получить категорию по ID",
         tags: ["Categories"],
-        security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
@@ -72,10 +68,10 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
               data: categorySchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
           404: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -88,11 +84,9 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.post<{ Body: any }>(
     "/categories",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Создать категорию (требует роль admin)",
+        description: "Создать категорию",
         tags: ["Categories"],
-        security: [{ bearerAuth: [] }],
         body: createCategorySchema,
         response: {
           201: {
@@ -102,10 +96,10 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
               data: categorySchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
           400: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -118,11 +112,9 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.put<{ Params: { id: string }; Body: any }>(
     "/categories/:id",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Обновить категорию (требует роль admin)",
+        description: "Обновить категорию",
         tags: ["Categories"],
-        security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
@@ -139,10 +131,10 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
               data: categorySchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
           404: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -155,11 +147,9 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.delete<{ Params: { id: string } }>(
     "/categories/:id",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Удалить категорию (требует роль admin)",
+        description: "Удалить категорию",
         tags: ["Categories"],
-        security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
@@ -170,8 +160,7 @@ export const categoriesPlugin: FastifyPluginAsync = async (fastify) => {
         response: {
           204: { type: "null" },
           404: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
