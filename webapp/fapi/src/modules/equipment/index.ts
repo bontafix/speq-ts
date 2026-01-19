@@ -21,12 +21,12 @@ export const equipmentPlugin: FastifyPluginAsync = async (fastify) => {
   // Регистрация роутов
   // Получить список оборудования с пагинацией
   fastify.get<{
-    Querystring: { page?: number; limit?: number; category?: string };
+    Querystring: { page?: number; limit?: number; category?: string; brand?: string };
   }>(
     "/equipment",
     {
       schema: {
-        description: "Получить список оборудования с пагинацией. Поддерживает фильтрацию по категории через параметр category.",
+        description: "Получить список оборудования с пагинацией. Поддерживает фильтрацию по категории (category) и бренду (brand).",
         tags: ["Equipment"],
         querystring: getEquipmentListQuerySchema,
         response: {

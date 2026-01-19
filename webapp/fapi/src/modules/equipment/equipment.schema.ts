@@ -29,6 +29,10 @@ export const getEquipmentListQuerySchema = {
       type: "string",
       description: "Фильтр по названию категории",
     },
+    brand: {
+      type: "string",
+      description: "Фильтр по названию бренда",
+    },
   },
 } as const;
 
@@ -70,6 +74,10 @@ export const equipmentCardSchema = {
       type: ["number", "null"],
       description: "Цена",
     },
+    imageUrl: {
+      type: "string",
+      description: "Ссылка на изображение оборудования",
+    },
     mainParameters: {
       type: "object",
       additionalProperties: {
@@ -95,7 +103,7 @@ export const equipmentCardSchema = {
       description: "Дата обновления",
     },
   },
-  required: ["id", "name", "category", "createdAt", "updatedAt"],
+  required: ["id", "name", "category", "imageUrl", "createdAt", "updatedAt"],
 } as const;
 
 /**

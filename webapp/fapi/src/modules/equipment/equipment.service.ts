@@ -31,6 +31,7 @@ export interface EquipmentCard {
   region: string | null;
   description: string | null;
   price: number | null;
+  imageUrl: string;
   mainParameters: Record<string, any>;
   normalizedParameters: Record<string, any>;
   createdAt: string;
@@ -53,6 +54,7 @@ export interface PaginatedResult<T> {
  */
 export interface EquipmentFilters {
   category?: string;
+  brand?: string;
 }
 
 /**
@@ -124,6 +126,7 @@ export class EquipmentService {
       region: equipment.region,
       description: equipment.description,
       price,
+      imageUrl: `speq-images/${equipment.id}/200`,
       mainParameters: equipment.main_parameters || {},
       normalizedParameters: equipment.normalized_parameters || {},
       createdAt,
@@ -150,6 +153,13 @@ export class EquipmentService {
     if (filters.category) {
       whereConditions.push(`e.category = $${paramIndex}`);
       queryParams.push(filters.category);
+      paramIndex++;
+    }
+
+    // Фильтр по бренду
+    if (filters.brand) {
+      whereConditions.push(`e.brand = $${paramIndex}`);
+      queryParams.push(filters.brand);
       paramIndex++;
     }
 
@@ -224,6 +234,7 @@ export class EquipmentService {
         region: equipment.region,
         description: equipment.description,
         price,
+        imageUrl: `speq-images/${equipment.id}/200`,
         mainParameters: equipment.main_parameters || {},
         normalizedParameters: equipment.normalized_parameters || {},
         createdAt,
