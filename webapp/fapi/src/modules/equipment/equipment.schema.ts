@@ -2,6 +2,8 @@
  * JSON Schema для валидации запросов и ответов модуля Equipment
  */
 
+import { paginationSchema } from "../../core/schemas/shared";
+
 /**
  * Схема параметров пути для получения оборудования по ID
  */
@@ -14,6 +16,13 @@ export const getEquipmentByIdParamsSchema = {
     },
   },
   required: ["id"],
+} as const;
+
+/**
+ * Схема query параметров для получения списка оборудования
+ */
+export const getEquipmentListQuerySchema = {
+  ...paginationSchema,
 } as const;
 
 /**
@@ -80,4 +89,35 @@ export const equipmentCardSchema = {
     },
   },
   required: ["id", "name", "category", "createdAt", "updatedAt"],
+} as const;
+
+/**
+ * Схема ответа с пагинированным списком оборудования
+ */
+export const paginatedEquipmentListSchema = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: equipmentCardSchema,
+      description: "Список оборудования",
+    },
+    total: {
+      type: "integer",
+      description: "Общее количество записей",
+    },
+    page: {
+      type: "integer",
+      description: "Номер текущей страницы",
+    },
+    limit: {
+      type: "integer",
+      description: "Количество элементов на странице",
+    },
+    totalPages: {
+      type: "integer",
+      description: "Общее количество страниц",
+    },
+  },
+  required: ["items", "total", "page", "limit", "totalPages"],
 } as const;

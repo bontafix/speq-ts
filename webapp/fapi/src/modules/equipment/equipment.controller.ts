@@ -10,10 +10,31 @@ interface GetEquipmentByIdParams {
 }
 
 /**
+ * Интерфейс query параметров для списка
+ */
+interface GetEquipmentListQuery {
+  page?: number;
+  limit?: number;
+}
+
+/**
  * Контроллер для обработки HTTP запросов модуля Equipment
  */
 export class EquipmentController {
   constructor(private service: EquipmentService) {}
+
+  /**
+   * Получить список оборудования с пагинацией
+   */
+  async getList(
+    request: FastifyRequest<{ Querystring: GetEquipmentListQuery }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const page = request.query.page || 1;
+    const limit = request.query.limit || 20;
+    const result = await this.service.getList(page, limit);
+    sendSuccess(reply, result);
+  }
 
   /**
    * Получить карточку оборудования по ID
