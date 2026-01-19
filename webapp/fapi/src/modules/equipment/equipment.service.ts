@@ -49,6 +49,13 @@ export interface PaginatedResult<T> {
 }
 
 /**
+ * Интерфейс фильтров для списка оборудования
+ */
+export interface EquipmentFilters {
+  category?: string;
+}
+
+/**
  * Сервис для работы с оборудованием
  */
 export class EquipmentService {
@@ -130,8 +137,23 @@ export class EquipmentService {
   async getList(
     page: number = 1,
     limit: number = 20,
+    filters: EquipmentFilters = {},
   ): Promise<PaginatedResult<EquipmentCard>> {
     const offset = (page - 1) * limit;
+
+    // Формируем условия WHERE для фильтров
+    const whereConditions: string[] = ["e.is_active = true"];
+    const queryParams: any[] = [];
+    let paramIndex = 1;
+
+    // Фильтр по категории
+    if (filters.category) {
+      whereConditions.push(`e.category = $${paramIndex}`);
+      queryParams.push(filters.category);
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.join(" AND ");
 
     // Получаем общее количество записей
     const countResult = await this.fastify.db.query<{ count: string }>(
@@ -139,13 +161,15 @@ export class EquipmentService {
         SELECT COUNT(*)::text AS count
         FROM equipment e
         LEFT JOIN brands b ON e.brand = b.name AND b.is_active = true
-        WHERE e.is_active = true
+        WHERE ${whereClause}
       `,
+      queryParams,
     );
 
     const total = parseInt(countResult.rows[0]?.count || "0", 10);
 
     // Получаем данные с пагинацией
+    const dataQueryParams = [...queryParams, limit, offset];
     const result = await this.fastify.db.query<EquipmentRow>(
       `
         SELECT
@@ -163,11 +187,11 @@ export class EquipmentService {
           e.updated_at
         FROM equipment e
         LEFT JOIN brands b ON e.brand = b.name AND b.is_active = true
-        WHERE e.is_active = true
+        WHERE ${whereClause}
         ORDER BY e.created_at DESC
-        LIMIT $1 OFFSET $2
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `,
-      [limit, offset],
+      dataQueryParams,
     );
 
     const items: EquipmentCard[] = result.rows.map((equipment) => {

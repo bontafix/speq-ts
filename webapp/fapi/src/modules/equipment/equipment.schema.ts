@@ -22,7 +22,14 @@ export const getEquipmentByIdParamsSchema = {
  * Схема query параметров для получения списка оборудования
  */
 export const getEquipmentListQuerySchema = {
-  ...paginationSchema,
+  type: "object",
+  properties: {
+    ...paginationSchema.properties,
+    category: {
+      type: "string",
+      description: "Фильтр по названию категории",
+    },
+  },
 } as const;
 
 /**

@@ -5,41 +5,39 @@ import {
   brandSchema,
   createBrandSchema,
   updateBrandSchema,
+  getBrandListQuerySchema,
+  paginatedBrandListSchema,
 } from "./brand.schema";
 import { errorResponseSchema } from "../../core/schemas/shared";
-import { requireRole } from "../../core/decorators/auth.decorator";
 
 /**
  * Плагин модуля Brands
- * Все эндпоинты требуют роль 'admin'
  */
 export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
   const service = new BrandService(fastify);
   const controller = new BrandController(service);
 
-  // Получить все бренды
-  fastify.get(
+  // Получить список брендов с пагинацией
+  fastify.get<{
+    Querystring: { page?: number; limit?: number };
+  }>(
     "/brands",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Получить все бренды (требует роль admin)",
+        description: "Получить список брендов с пагинацией",
         tags: ["Brands"],
-        security: [{ bearerAuth: [] }],
+        querystring: getBrandListQuerySchema,
         response: {
           200: {
             type: "object",
             properties: {
               success: { type: "boolean" },
-              data: {
-                type: "array",
-                items: brandSchema,
-              },
+              data: paginatedBrandListSchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -52,11 +50,9 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.get<{ Params: { id: string } }>(
     "/brands/:id",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Получить бренд по ID (требует роль admin)",
+        description: "Получить бренд по ID",
         tags: ["Brands"],
-        security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
@@ -72,10 +68,10 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
               data: brandSchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
           404: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -88,11 +84,9 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.post<{ Body: any }>(
     "/brands",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Создать бренд (требует роль admin)",
+        description: "Создать бренд",
         tags: ["Brands"],
-        security: [{ bearerAuth: [] }],
         body: createBrandSchema,
         response: {
           201: {
@@ -102,10 +96,10 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
               data: brandSchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
           400: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -118,11 +112,9 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.put<{ Params: { id: string }; Body: any }>(
     "/brands/:id",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Обновить бренд (требует роль admin)",
+        description: "Обновить бренд",
         tags: ["Brands"],
-        security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
@@ -139,10 +131,10 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
               data: brandSchema,
               timestamp: { type: "string" },
             },
+            required: ["success", "data", "timestamp"],
           },
           404: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },
@@ -155,11 +147,9 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.delete<{ Params: { id: string } }>(
     "/brands/:id",
     {
-      preHandler: [requireRole("admin")],
       schema: {
-        description: "Удалить бренд (требует роль admin)",
+        description: "Удалить бренд",
         tags: ["Brands"],
-        security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
@@ -170,8 +160,7 @@ export const brandsPlugin: FastifyPluginAsync = async (fastify) => {
         response: {
           204: { type: "null" },
           404: errorResponseSchema,
-          401: errorResponseSchema,
-          403: errorResponseSchema,
+          500: errorResponseSchema,
         },
       },
     },

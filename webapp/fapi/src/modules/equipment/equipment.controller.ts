@@ -15,6 +15,7 @@ interface GetEquipmentByIdParams {
 interface GetEquipmentListQuery {
   page?: number;
   limit?: number;
+  category?: string;
 }
 
 /**
@@ -32,7 +33,11 @@ export class EquipmentController {
   ): Promise<void> {
     const page = request.query.page || 1;
     const limit = request.query.limit || 20;
-    const result = await this.service.getList(page, limit);
+    const filters: { category?: string } = {};
+    if (request.query.category) {
+      filters.category = request.query.category;
+    }
+    const result = await this.service.getList(page, limit, filters);
     sendSuccess(reply, result);
   }
 

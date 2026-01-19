@@ -1,5 +1,11 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { BrandService, CreateBrandData, UpdateBrandData, Brand } from "./brand.service";
+import {
+  BrandService,
+  CreateBrandData,
+  UpdateBrandData,
+  Brand,
+  PaginatedBrandResult,
+} from "./brand.service";
 import { sendSuccess } from "../../shared/utils/api-response";
 
 /**
@@ -16,11 +22,15 @@ export class BrandController {
   constructor(private service: BrandService) {}
 
   /**
-   * Получить все бренды
+   * Получить список брендов с пагинацией
    */
-  async getAll(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const brands = await this.service.getAll();
-    sendSuccess<Brand[]>(reply, brands);
+  async getAll(
+    request: FastifyRequest<{ Querystring: { page?: number; limit?: number } }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const { page = 1, limit = 20 } = request.query || {};
+    const result = await this.service.getAll(page, limit);
+    sendSuccess<PaginatedBrandResult>(reply, result);
   }
 
   /**

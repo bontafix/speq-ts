@@ -29,15 +29,41 @@ export interface UpdateBrandData {
 }
 
 /**
+ * Результат пагинации брендов
+ */
+export interface PaginatedBrandResult {
+  items: Brand[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+/**
  * Сервис управления брендами
  */
 export class BrandService {
   constructor(private fastify: FastifyInstance) {}
 
   /**
-   * Получить все бренды
+   * Получить список брендов с пагинацией
    */
-  async getAll(): Promise<Brand[]> {
+  async getAll(page: number = 1, limit: number = 20): Promise<PaginatedBrandResult> {
+    const safePage = page > 0 ? page : 1;
+    const safeLimit = limit > 0 ? limit : 20;
+    const offset = (safePage - 1) * safeLimit;
+
+    // Общее количество брендов
+    const countResult = await this.fastify.db.query<{ count: string }>(
+      `
+        SELECT COUNT(*)::text AS count
+        FROM brands
+      `,
+    );
+
+    const total = parseInt(countResult.rows[0]?.count || "0", 10);
+
+    // Данные текущей страницы
     const result = await this.fastify.db.query<{
       id: number;
       name: string;
@@ -49,10 +75,12 @@ export class BrandService {
         SELECT id, name, is_active, created_at, updated_at
         FROM brands
         ORDER BY id
+        LIMIT $1 OFFSET $2
       `,
+      [safeLimit, offset],
     );
 
-    return result.rows.map((row) => {
+    const items: Brand[] = result.rows.map((row) => {
       const createdAt = row.created_at instanceof Date 
         ? row.created_at.toISOString() 
         : new Date(row.created_at).toISOString();
@@ -68,6 +96,16 @@ export class BrandService {
         updatedAt,
       };
     });
+
+    const totalPages = Math.ceil(total / safeLimit) || 1;
+
+    return {
+      items,
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages,
+    };
   }
 
   /**
