@@ -17,7 +17,7 @@
  * Запуск: npx tsx src/scripts/seed-parameter-dictionary-complete.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 import { ParameterDictionaryService } from "../normalization";
 
@@ -630,7 +630,7 @@ const parameters: ParameterEntry[] = [
       "wheelbase_mm",
     ],
     sql_expression: "main_parameters->>'Колесная база, мм'",
-    priority: 35,
+    priority: 20,  // ОСНОВНАЯ характеристика - важна для выбора (137 записей)
   },
 
   // ========================================================================
@@ -709,7 +709,37 @@ const parameters: ParameterEntry[] = [
       "emission",
     ],
     sql_expression: "main_parameters->>'Экологический класс'",
-    priority: 30,
+    priority: 20,  // ОСНОВНАЯ характеристика - важна для выбора (137 записей)
+  },
+
+  // ========================================================================
+  // ГРУЗОВИКИ - Допустимая максимальная масса (число)
+  // ========================================================================
+  {
+    key: "max_permissible_mass_kg",
+    label_ru: "Допустимая максимальная масса",
+    description_ru: "Допустимая максимальная масса автомобиля в кг",
+    category: "truck",
+    param_type: "number",
+    unit: "kg",
+    min_value: 3500,
+    max_value: 100000,
+    aliases: [
+      // Из БД / русские
+      "Допустимая максимальная масса, кг",
+      "Допустимая максимальная масса",
+      "допустимая масса",
+      "максимальная масса",
+      "полная масса",
+      "полная масса кг",
+      // Английские
+      "max_permissible_mass",
+      "maximum_mass",
+      "gross_vehicle_weight",
+      "gvw",
+    ],
+    sql_expression: "main_parameters->>'Допустимая максимальная масса, кг'",
+    priority: 15,  // ОСНОВНАЯ характеристика - важна для выбора (137 записей)
   },
 
   // ========================================================================
@@ -847,12 +877,11 @@ const parameters: ParameterEntry[] = [
       // Английские
       "tires",
       "tyres",
-      "tire_size",
       "tire",
       "wheel_tire",
     ],
     sql_expression: "main_parameters->>'Шины'",
-    priority: 60,
+    priority: 25,  // ОСНОВНАЯ характеристика - важна для выбора (138 записей)
   },
 
   // ========================================================================
@@ -934,7 +963,7 @@ const parameters: ParameterEntry[] = [
       "engine",
     ],
     sql_expression: "main_parameters->>'Модель двигателя'",
-    priority: 60,
+    priority: 25,  // ОСНОВНАЯ характеристика - важна для выбора (143 записи)
   },
 
   // ========================================================================
@@ -953,7 +982,7 @@ const parameters: ParameterEntry[] = [
       "engine_description",
     ],
     sql_expression: "main_parameters->>'Тип двигателя'",
-    priority: 60,
+    priority: 25,  // ОСНОВНАЯ характеристика - важна для выбора (137 записей)
   },
 
   // ========================================================================

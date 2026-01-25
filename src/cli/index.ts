@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import "dotenv/config";
+import "../config/env-loader";
 import { AppContainer } from "../app/container";
 import { ChatController } from "./chat.controller";
 

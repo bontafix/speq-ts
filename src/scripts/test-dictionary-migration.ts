@@ -10,7 +10,7 @@
  * Запуск: npx tsx src/scripts/test-dictionary-migration.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { ParameterDictionaryService } from "../normalization";
 import { UnitParser } from "../normalization";
 import { pgPool } from "../db/pg";

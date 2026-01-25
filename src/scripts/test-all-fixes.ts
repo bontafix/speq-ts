@@ -4,7 +4,7 @@
  * Запуск: npx tsx src/scripts/test-all-fixes.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
 import type { SearchQuery } from "../catalog";

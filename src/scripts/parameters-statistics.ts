@@ -19,7 +19,7 @@
  *   npx tsx src/scripts/parameters-statistics.ts --json  # Только JSON
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 import { ParameterDictionaryService } from "../normalization";
 

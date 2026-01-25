@@ -10,7 +10,7 @@
  *   npm run resize:images -- --width 50
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { readdir, stat, readFile, writeFile } from "fs/promises";
 import { join, extname, basename, dirname } from "path";
 import { cwd } from "process";

@@ -9,7 +9,7 @@
  * Запуск: npx tsx src/scripts/analyze-unresolved-parameters.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 import { ParameterDictionaryService } from "../normalization";
 

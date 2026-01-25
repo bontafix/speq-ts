@@ -1,9 +1,0 @@
-/**
- * Хеширование пароля
- */
-export declare function hashPassword(password: string): Promise<string>;
-/**
- * Проверка пароля
- */
-export declare function comparePassword(password: string, hashedPassword: string): Promise<boolean>;
-//# sourceMappingURL=password.d.ts.map

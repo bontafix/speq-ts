@@ -10,6 +10,7 @@
  * Запуск: npx tsx src/scripts/test-message-analysis-algorithm.ts
  */
 
+import "../config/env-loader";
 import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
 import { SearchQueryValidator } from "../llm/search-query.validator";
 import { QueryParameterNormalizer } from "../normalization/query-parameter-normalizer";
@@ -174,7 +175,7 @@ const testCases: TestCase[] = [
     expectedAction: "final",
     expectedQuery: {
       text: "тест",
-      limit: "много", // Некорректное значение
+      limit: "много" as any, // Некорректное значение (для теста валидации)
       parameters: {
         "'; DROP TABLE --": 123, // SQL инъекция в ключе
       },
@@ -286,7 +287,7 @@ async function runTests() {
 
       if (step.action === "ask") {
         const questionMatch = testCase.expectedQuestion
-          ? step.question.includes(testCase.expectedQuestion.split("?")[0])
+          ? step.question.includes(testCase.expectedQuestion.split("?")[0] || "")
           : true;
         details += `, Question: ${questionMatch ? "✓" : "✗"}`;
         if (actionMatch && questionMatch) passedTests++;
@@ -294,7 +295,7 @@ async function runTests() {
         if (testCase.expectedQuery) {
           // Для теста с некорректными данными проверяем, что валидатор удалил опасные поля
           if (testCase.name.includes("некорректными данными")) {
-            const hasInvalidLimit = step.query.limit === "много";
+            const hasInvalidLimit = typeof step.query.limit === "string" && step.query.limit === "много";
             const hasInvalidParam = step.query.parameters && "'; DROP TABLE --" in step.query.parameters;
             const passed = actionMatch && !hasInvalidLimit && !hasInvalidParam;
             details += `, Валидация: ${passed ? "✓ (опасные поля удалены)" : "✗"}`;
@@ -439,8 +440,8 @@ async function runTests() {
       }
       
       const result = normalizer.normalizeQuery(test.query);
-      const hasParams = result.normalizedQuery.parameters && Object.keys(result.normalizedQuery.parameters).length > 0;
-      const passed = test.shouldNormalize ? hasParams : !hasParams;
+      const hasParams = !!(result.normalizedQuery.parameters && Object.keys(result.normalizedQuery.parameters).length > 0);
+      const passed: boolean = test.shouldNormalize ? hasParams : !hasParams;
       passedTests += passed ? 1 : 0;
       reportTest(
         test.name,

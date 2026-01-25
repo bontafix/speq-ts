@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./env-loader";
 
 export class ConfigService {
   get llm() {
@@ -20,11 +20,11 @@ export class ConfigService {
 
   get db() {
     return {
-      host: process.env.POSTGRES_HOST || "localhost",
-      port: Number(process.env.POSTGRES_PORT) || 5432,
-      user: process.env.POSTGRES_USER || "postgres",
-      password: process.env.POSTGRES_PASSWORD || "postgres",
-      database: process.env.POSTGRES_DB || "speq_db",
+      host: process.env.DB_HOST || process.env.POSTGRES_HOST || process.env.PGHOST || "localhost",
+      port: Number(process.env.DB_PORT || process.env.POSTGRES_PORT || process.env.PGPORT) || 5432,
+      user: process.env.DB_USER || process.env.POSTGRES_USER || process.env.PGUSER || "postgres",
+      password: process.env.DB_PASS || process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "postgres",
+      database: process.env.DB_NAME || process.env.DB_DATABASE || process.env.POSTGRES_DB || process.env.PGDATABASE || "speq_db",
     };
   }
 

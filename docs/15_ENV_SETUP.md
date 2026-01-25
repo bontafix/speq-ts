@@ -2,34 +2,39 @@
 
 ## Где сохранить переменные окружения
 
-Переменные окружения сохраняются в файле `.env` в корне проекта.
+Проект поддерживает автоматическую загрузку файлов в зависимости от `NODE_ENV`:
+1. `.env.${NODE_ENV}.local`
+2. `.env.${NODE_ENV}`
+3. `.env.local`
+4. `.env`
+
+Например, если `NODE_ENV=production`, будет предпринята попытка загрузить `.env.production`.
 
 ## Быстрый старт
 
-### 1. Создать файл .env
+### 1. Создать файл окружения
 
 ```bash
-# Скопировать пример
-cp env.example .env
+# Для разработки
+cp env.example .env.development
 
-# Отредактировать
-nano .env
-# или
-vim .env
+# Для продакшена
+cp env.example .env.production
 ```
 
 ### 2. Настроить подключение к PostgreSQL
 
-В файле `.env` укажите параметры подключения:
+Используйте унифицированные переменные (рекомендуется):
 
 ```bash
-# База данных PostgreSQL
-PGHOST=localhost          # Хост БД (обычно localhost)
-PGPORT=5432              # Порт (обычно 5432)
-PGUSER=postgres          # Имя пользователя
-PGPASSWORD=your_password # Пароль
-PGDATABASE=equipment_catalog  # Имя базы данных
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASS=your_password
+DB_NAME=equipment_catalog
 ```
+
+Проект также поддерживает старые форматы `PG*`, `POSTGRES_*` и `FAPI_PG*` для обратной совместимости.
 
 ### 3. Настроить LLM провайдеры (опционально)
 

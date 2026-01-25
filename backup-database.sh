@@ -11,15 +11,19 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Загрузка переменных окружения из .env (если есть)
-if [ -f .env ]; then
+NODE_ENV="${NODE_ENV:-development}"
+if [ -f ".env.${NODE_ENV}" ]; then
+    export $(cat ".env.${NODE_ENV}" | grep -v '^#' | xargs)
+elif [ -f .env ]; then
     export $(cat .env | grep -v '^#' | xargs)
 fi
 
 # Параметры подключения (из переменных окружения или значения по умолчанию)
-PGHOST="${PGHOST:-localhost}"
-PGPORT="${PGPORT:-5432}"
-PGUSER="${PGUSER:-postgres}"
-PGDATABASE="${PGDATABASE:-equipment_catalog}"
+PGHOST="${DB_HOST:-${PGHOST:-localhost}}"
+PGPORT="${DB_PORT:-${PGPORT:-5432}}"
+PGUSER="${DB_USER:-${PGUSER:-postgres}}"
+PGPASSWORD="${DB_PASS:-${DB_PASSWORD:-${PGPASSWORD:-}}}"
+PGDATABASE="${DB_NAME:-${DB_DATABASE:-${PGDATABASE:-equipment_catalog}}}"
 
 # Имя файла бэкапа с датой и временем
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")

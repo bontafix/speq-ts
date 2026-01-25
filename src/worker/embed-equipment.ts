@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import "dotenv/config";
+import "../config/env-loader";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { LLMProviderFactory } from "../llm";
 import { ConfigService } from "../config/config";

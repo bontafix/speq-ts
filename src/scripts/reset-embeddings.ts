@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 
 /**

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import "dotenv/config";
+import "../config/env-loader";
 import { Telegraf, Markup } from "telegraf";
 import { AppContainer } from "../app/container";
 import { InteractiveQueryBuilder } from "../llm/interactive-query.builder";
@@ -152,11 +152,12 @@ export async function setupBot() {
       console.log(webAppUrl);
       
       // Формируем клавиатуру с кнопкой web app, если URL доступен
-      const keyboard = webAppUrl 
-        ? Markup.inlineKeyboard([
-            [Markup.button.webApp("📱 Открыть карточку", webAppUrl)]
-          ])
-        : undefined;
+      // const keyboard = webAppUrl 
+      //   ? Markup.inlineKeyboard([
+      //       [Markup.button.webApp("📱 Открыть карточку", webAppUrl)]
+      //     ])
+      //   : undefined;
+      const keyboard = null as any;
       
       if (imageUrl) {
         // Отправляем фото с полной подписью

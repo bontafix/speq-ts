@@ -35,20 +35,24 @@ if [ ! -f "$BACKUP_FILE" ]; then
 fi
 
 # Загрузка переменных окружения из .env (если есть)
-if [ -f .env ]; then
+NODE_ENV="${NODE_ENV:-development}"
+if [ -f ".env.${NODE_ENV}" ]; then
+    export $(cat ".env.${NODE_ENV}" | grep -v '^#' | xargs)
+elif [ -f .env ]; then
     export $(cat .env | grep -v '^#' | xargs)
 fi
 
 # Параметры подключения к ЦЕЛЕВОМУ серверу
-PGHOST="${PGHOST:-localhost}"
-PGPORT="${PGPORT:-5432}"
-PGUSER="${PGUSER:-postgres}"
+PGHOST="${DB_HOST:-${PGHOST:-localhost}}"
+PGPORT="${DB_PORT:-${PGPORT:-5432}}"
+PGUSER="${DB_USER:-${PGUSER:-postgres}}"
+PGPASSWORD="${DB_PASS:-${DB_PASSWORD:-${PGPASSWORD:-}}}"
 
 # Определение имени базы данных из имени файла или переменной окружения
 if [[ "$BACKUP_FILE" =~ backup_([^_]+)_[0-9]+\.(sql|dump)$ ]]; then
     TARGET_DB="${BASH_REMATCH[1]}"
 else
-    TARGET_DB="${PGDATABASE:-equipment_catalog}"
+    TARGET_DB="${DB_NAME:-${DB_DATABASE:-${PGDATABASE:-equipment_catalog}}}"
 fi
 
 echo -e "${GREEN}🔄 Начинаю восстановление базы данных...${NC}"

@@ -1,6 +1,6 @@
 #!/usr/bin/env ts-node
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 import { ParameterDictionaryService } from "../normalization/parameter-dictionary.service";
 import { ParameterNormalizerService } from "../normalization/parameter-normalizer.service";

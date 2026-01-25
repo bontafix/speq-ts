@@ -13,7 +13,7 @@
  * Запуск: npx tsx src/scripts/diagnose-parameters-status.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 import { ParameterDictionaryService } from "../normalization";
 import { readFileSync } from "fs";

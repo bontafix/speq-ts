@@ -4,7 +4,7 @@
  * Запуск: npx tsx src/scripts/test-security-fixes.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import type { SearchQuery } from "../catalog";
 import { pgPool } from "../db/pg";

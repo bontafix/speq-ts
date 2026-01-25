@@ -1,5 +1,5 @@
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 import { ParameterDictionaryService } from "../normalization/parameter-dictionary.service";
 import { QueryParameterNormalizer } from "../normalization/query-parameter-normalizer";

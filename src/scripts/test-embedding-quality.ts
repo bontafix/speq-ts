@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import "dotenv/config";
+import "../config/env-loader";
 import { LLMProviderFactory } from "../llm";
 import { ConfigService } from "../config/config";
 import chalk from "chalk";

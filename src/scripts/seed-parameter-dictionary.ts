@@ -10,7 +10,7 @@
  * Запуск: npx tsx src/scripts/seed-parameter-dictionary.ts
  */
 
-import "dotenv/config";
+import "../config/env-loader";
 import { pgPool } from "../db/pg";
 
 interface ParameterEntry {

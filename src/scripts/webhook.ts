@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import "dotenv/config";
+import "../config/env-loader";
 import { setWebhook, deleteWebhook, getWebhookInfo } from "../telegram";
 
 const command = process.argv[2];

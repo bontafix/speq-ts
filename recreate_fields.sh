@@ -4,10 +4,18 @@
 set -e
 
 # Параметры подключения (из .env или переменные окружения)
-PGHOST="${PGHOST:-localhost}"
-PGPORT="${PGPORT:-5432}"
-PGUSER="${PGUSER:-speq_user}"
-PGDATABASE="${PGDATABASE:-speq}"
+NODE_ENV="${NODE_ENV:-development}"
+if [ -f ".env.${NODE_ENV}" ]; then
+    export $(cat ".env.${NODE_ENV}" | grep -v '^#' | xargs)
+elif [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
+PGHOST="${DB_HOST:-${PGHOST:-localhost}}"
+PGPORT="${DB_PORT:-${PGPORT:-5432}}"
+PGUSER="${DB_USER:-${PGUSER:-postgres}}"
+PGPASSWORD="${DB_PASS:-${DB_PASSWORD:-${PGPASSWORD:-}}}"
+PGDATABASE="${DB_NAME:-${DB_DATABASE:-${PGDATABASE:-equipment_catalog}}}"
 
 # Если указан PGPASSWORD, экспортируем его
 if [ -n "$PGPASSWORD" ]; then

@@ -10,22 +10,31 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR" || exit 1
 
 # Загружаем переменные окружения из .env
-if [ -f .env ]; then
+NODE_ENV="${NODE_ENV:-development}"
+if [ -f ".env.${NODE_ENV}" ]; then
+  export $(cat ".env.${NODE_ENV}" | grep -v '^#' | grep -v '^$' | xargs)
+  echo "✅ Loaded env from .env.${NODE_ENV}"
+elif [ -f .env ]; then
   export $(cat .env | grep -v '^#' | grep -v '^$' | xargs)
+  echo "✅ Loaded env from .env"
 else
   echo "⚠️  Файл .env не найден в $PROJECT_DIR"
   echo "Используются переменные окружения системы"
 fi
 
+# Поддержка унифицированных переменных БД
+PGHOST="${DB_HOST:-${PGHOST}}"
+PGPORT="${DB_PORT:-${PGPORT:-5432}}"
+PGUSER="${DB_USER:-${PGUSER}}"
+PGPASSWORD="${DB_PASS:-${DB_PASSWORD:-${PGPASSWORD}}}"
+PGDATABASE="${DB_NAME:-${DB_DATABASE:-${PGDATABASE}}}"
+
 # Проверяем наличие необходимых переменных
 if [ -z "$PGHOST" ] || [ -z "$PGUSER" ] || [ -z "$PGDATABASE" ]; then
   echo "❌ Ошибка: не заданы необходимые переменные окружения"
-  echo "Требуются: PGHOST, PGUSER, PGDATABASE"
+  echo "Требуются: DB_HOST (или PGHOST), DB_USER (или PGUSER), DB_NAME (или PGDATABASE)"
   exit 1
 fi
-
-# Устанавливаем значения по умолчанию
-PGPORT="${PGPORT:-5432}"
 
 # Формируем строку подключения для MCP сервера PostgreSQL
 # Формат: postgresql://[user[:password]@][host][:port][/database]
