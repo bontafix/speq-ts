@@ -121,15 +121,39 @@ export async function setupBot() {
     if (!webappBaseUrl) {
       return null;
     }
+    // Telegram WebApp кнопка принимает только HTTPS ссылки
+    if (!/^https:\/\//i.test(webappBaseUrl)) {
+      console.warn(
+        `[Telegram] WEBAPP_BASE_URL должен начинаться с https://, иначе WebApp кнопка не работает: ${webappBaseUrl}`,
+      );
+      return null;
+    }
+
+    // Если webapp использует hash-router, ожидаем базу вида:
+    // - https://botfix.ru/speq-bot/admin/mini/#
+    // - https://botfix.ru/speq-bot/admin/mini/#/
+    // - https://botfix.ru/speq-bot/admin/mini/#/equipment
+    if (webappBaseUrl.includes("#")) {
+      const parts = webappBaseUrl.split("#", 2);
+      const beforeHash = parts[0] ?? "";
+      const afterHashRaw = parts[1] ?? "";
+      const base = beforeHash.replace(/\/$/, "");
+      const afterHash = afterHashRaw.replace(/^\/+/, "").replace(/\/+$/, ""); // "" | "equipment" | "some/base"
+      const route = `equipment/${equipmentId}`;
+      const fullHashPath = afterHash ? `${afterHash}/${route}` : route;
+      return `${base}#/${fullHashPath}`;
+    }
+
+    // Иначе считаем, что webapp доступен как обычный path (history router)
     // Убираем завершающий слеш, если есть
     let base = webappBaseUrl.replace(/\/$/, "");
-    
+
     // Проверяем, заканчивается ли базовый URL на /webapp
     // Если нет - добавляем /webapp
     if (!base.endsWith("/webapp")) {
       base = `${base}/webapp`;
     }
-    
+
     return `${base}/equipment/${equipmentId}`;
   }
 
@@ -149,24 +173,20 @@ export async function setupBot() {
       
       const imageUrl = answerGenerator.getImageUrl(item.id);
       const webAppUrl = getWebAppUrl(item.id);
-      console.log(webAppUrl);
+      if (webAppUrl) {
+        console.log(`[Telegram] WebApp URL для ${item.id}: ${webAppUrl}`);
+      }
       
       // Формируем клавиатуру с кнопкой web app, если URL доступен
-      // const keyboard = webAppUrl 
-      //   ? Markup.inlineKeyboard([
-      //       [Markup.button.webApp("📱 Открыть карточку", webAppUrl)]
-      //     ])
-      //   : undefined;
-      const keyboard = null as any;
+      const keyboard = webAppUrl
+        ? Markup.inlineKeyboard([[Markup.button.webApp("📱 Открыть карточку", webAppUrl)]])
+        : undefined;
       
       if (imageUrl) {
         // Отправляем фото с полной подписью
         try {
           const caption = formatCategoryEquipmentPhotoCaption(item, index);
-          const extra: any = { caption };
-          if (keyboard) {
-            extra.reply_markup = keyboard.reply_markup;
-          }
+          const extra: any = keyboard ? { caption, ...keyboard } : { caption };
           const message = await ctx.replyWithPhoto(imageUrl, extra);
           
           // Сохраняем message_id в сессию

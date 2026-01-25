@@ -130,6 +130,9 @@ export async function createApp(): Promise<FastifyInstance> {
     },
   });
 
+  // Глобальный обработчик ошибок (ВАЖНО: до регистрации бизнес-роутов из-за encapsulation)
+  app.setErrorHandler(errorHandler);
+
   // Регистрация бизнес-модулей (ПОСЛЕ Swagger, чтобы он мог собрать все схемы)
   await app.register(authPlugin);
   await app.register(usersPlugin);
@@ -142,9 +145,6 @@ export async function createApp(): Promise<FastifyInstance> {
   await app.register(telegramPlugin);
   await app.register(searchPlugin);
   await app.register(llmPlugin);
-
-  // Глобальный обработчик ошибок
-  app.setErrorHandler(errorHandler);
   
   // Хук onError для добавления CORS заголовков при ошибках
   app.addHook('onError', async (request, reply, error) => {

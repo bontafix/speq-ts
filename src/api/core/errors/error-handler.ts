@@ -24,7 +24,7 @@ function addCorsHeaders(request: FastifyRequest, reply: FastifyReply) {
 /**
  * Глобальный обработчик ошибок
  */
-export async function errorHandler(
+export function errorHandler(
   this: FastifyInstance,
   error: FastifyError | AppError,
   request: FastifyRequest,
@@ -38,23 +38,25 @@ export async function errorHandler(
 
   // Если это наша кастомная ошибка
   if (error instanceof AppError) {
-    return reply.status(error.statusCode).send({
+    reply.status(error.statusCode).send({
       error: {
         code: error.code || "APP_ERROR",
         message: error.message,
       },
     });
+    return;
   }
 
   // Ошибка валидации Fastify
   if (error.validation) {
-    return reply.status(400).send({
+    reply.status(400).send({
       error: {
         code: "VALIDATION_ERROR",
         message: "Validation error",
         details: error.validation,
       },
     });
+    return;
   }
 
   // Стандартная ошибка Fastify
@@ -62,10 +64,11 @@ export async function errorHandler(
   const message =
     process.env.NODE_ENV === "development" ? error.message : "Internal server error";
 
-  return reply.status(statusCode).send({
+  reply.status(statusCode).send({
     error: {
       code: error.code || "INTERNAL_ERROR",
       message,
     },
   });
+  return;
 }
