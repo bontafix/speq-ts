@@ -111,7 +111,7 @@ async function collectAllParameters(): Promise<ParameterAnalysis[]> {
       
       // Поиск единиц измерения
       const unitMatch = str.match(/\b(кг|т|л|мм|см|м|квт|л\.с\.|км\/ч|м\/ч|bar|psi|mpa)\b/i);
-      if (unitMatch) {
+      if (unitMatch && unitMatch[1]) {
         unitPatterns.push(unitMatch[1].toLowerCase());
       }
     }
@@ -211,29 +211,44 @@ ${param.unitPatterns.length > 0 ? `Единицы: ${param.unitPatterns.join(", 
 `;
 
   try {
-    const response = await llmProvider.generateCompletion({
+    const response = await llmProvider.chat({
       model,
-      prompt,
-      maxTokens: 200,
-      temperature: 0.1
+      messages: [
+        {
+          role: "system",
+          content: "Ты помощник по созданию справочника параметров оборудования. Отвечай ТОЛЬКО валидным JSON без комментариев и пояснений.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.1,
     });
     
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    const raw = response.message.content.trim();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     
     const generated = JSON.parse(jsonMatch[0]);
     
-    return {
+    const result: DictionaryEntry = {
       key: generated.key,
       label_ru: generated.label_ru,
       description_ru: `Параметр: ${param.key}`,
       category: generated.category,
       param_type: generated.param_type,
-      unit: param.unitPatterns[0],
       aliases: [param.key, param.key.toLowerCase()],
       sql_expression: `main_parameters->>'${param.key}'`,
       priority: generated.priority
     };
+    
+    // Добавляем unit только если он есть
+    if (param.unitPatterns[0]) {
+      result.unit = param.unitPatterns[0];
+    }
+    
+    return result;
   } catch (error) {
     console.warn(`❌ Ошибка генерации для ${param.key}:`, error);
     return null;
@@ -254,7 +269,12 @@ async function main() {
     const filteredParams = filterParameters(allParams);
     
     // 3. Инициализировать LLM
-    const llmProvider = LLMProviderFactory.createProvider();
+    const llmFactory = new LLMProviderFactory();
+    const llmProvider = {
+      chat: async (options: any) => {
+        return await llmFactory.chat(options);
+      },
+    };
     
     // 4. Сгенерировать записи
     console.log("\n🤖 Генерация записей через LLM...");

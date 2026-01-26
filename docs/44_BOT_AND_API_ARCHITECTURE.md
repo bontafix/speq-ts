@@ -91,7 +91,7 @@
 2. При запуске API вызывается `setupBot()`, который создает экземпляр бота
 3. Бот сохраняется в `botInstance` (singleton)
 4. Telegram отправляет обновления на webhook URL
-5. Nginx проксирует запросы на API сервер
+5. Nginx проксирует запросы на API сервер (127.0.0.1:7506)
 6. API вызывает `handleUpdate()` из `src/telegram/index.ts`
 7. Бот обрабатывает обновление через `bot.handleUpdate(update)`
 
@@ -114,7 +114,7 @@ npm run webhook:info
 **Что происходит:**
 1. Загружается `.env.production`
 2. Создается Fastify приложение
-3. Сервер слушает на `127.0.0.1:7505` (только localhost, nginx проксирует)
+3. Сервер слушает на `127.0.0.1:7506` (только localhost, nginx проксирует)
 4. Регистрируется endpoint `/telegram/webhook` для бота
 5. Swagger доступен на `https://botfix.ru/speq-bot/webapp/api/api-docs`
 
@@ -205,11 +205,11 @@ npm run webhook:info
 │  (reverse proxy)    │
 └──────┬──────────────┘
        │
-       │ Proxy to localhost:7505
+       │ Proxy to localhost:7506
        ▼
 ┌─────────────────────┐
 │  Fastify API        │
-│  (port 7505)        │
+│  (port 7506)        │
 │  POST /telegram/webhook │
 └──────┬──────────────┘
        │
@@ -253,7 +253,7 @@ npm run webhook:info
        ▼
 ┌─────────────────────┐
 │  Fastify API        │
-│  (port 7505)        │
+│  (port 7506)        │
 └──────┬──────────────┘
        │
        ▼
@@ -312,12 +312,12 @@ npm run webhook:info
 | Параметр | Development | Production |
 |----------|-------------|------------|
 | **Бот режим** | Polling | Webhook |
-| **API порт** | 7507 | 7505 |
+| **API порт** | 7507 | 7506 |
 | **API хост** | 0.0.0.0 | 127.0.0.1 |
 | **CORS** | localhost:* | https://botfix.ru |
 | **Логирование** | Pretty (pino-pretty) | JSON |
 | **Swagger CSP** | Отключен | Включен |
-| **Домен** | http://localhost:7507 | https://botfix.ru/speq-bot/webapp/api |
+| **Домен** | http://localhost:7507 | https://botfix.ru/speq-bot/fapi |
 | **Webhook** | Не используется | https://botfix.ru/speq-bot/telegram/webhook |
 
 ---
