@@ -7,6 +7,7 @@ import {
   PaginatedBrandResult,
 } from "./brand.service";
 import { sendSuccess } from "../../shared/utils/api-response";
+import { parseId } from "../../shared/utils/validation";
 
 /**
  * Интерфейс параметров пути
@@ -41,10 +42,7 @@ export class BrandController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const brandId = parseInt(id, 10);
-    if (isNaN(brandId)) {
-      throw new Error("Invalid brand ID");
-    }
+    const brandId = parseId(id, 'brand');
     const brand = await this.service.getById(brandId);
     sendSuccess<Brand>(reply, brand);
   }
@@ -69,10 +67,7 @@ export class BrandController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const brandId = parseInt(id, 10);
-    if (isNaN(brandId)) {
-      throw new Error("Invalid brand ID");
-    }
+    const brandId = parseId(id, 'brand');
     const data = request.body;
     const brand = await this.service.update(brandId, data);
     sendSuccess<Brand>(reply, brand);
@@ -86,10 +81,7 @@ export class BrandController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const brandId = parseInt(id, 10);
-    if (isNaN(brandId)) {
-      throw new Error("Invalid brand ID");
-    }
+    const brandId = parseId(id, 'brand');
     await this.service.delete(brandId);
     reply.status(204).send();
   }

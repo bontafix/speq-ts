@@ -4,6 +4,7 @@ import { ParameterDictionaryService } from "../normalization";
 import { SearchEngine } from "../search";
 import { CatalogService } from "../catalog";
 import { LLMProviderFactory } from "../llm";
+import { pgPool } from "../db/pg";
 
 export class AppContainer {
   readonly config: ConfigService;
@@ -19,7 +20,7 @@ export class AppContainer {
 
     // Инициализация в правильном порядке
     this.dictionaryService = new ParameterDictionaryService();
-    this.repository = new EquipmentRepository(this.dictionaryService); // Передаем словарь
+    this.repository = new EquipmentRepository(pgPool, this.dictionaryService); // Передаем пул и словарь
     this.llmFactory = new LLMProviderFactory();
     
     // Inject llmFactory into SearchEngine for vector generation
@@ -49,4 +50,3 @@ export class AppContainer {
     }
   }
 }
-

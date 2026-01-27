@@ -1,5 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { NotFoundError } from "../../core/errors/app-error";
+import { formatTimestamps } from "../../shared/utils/date";
+import { calculatePagination, createPaginatedResponse } from "../../shared/utils/pagination";
 
 /**
  * Интерфейс данных оборудования из БД
@@ -34,8 +36,8 @@ export interface EquipmentCard {
   imageUrl: string;
   mainParameters: Record<string, any>;
   normalizedParameters: Record<string, any>;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -96,6 +98,7 @@ export class EquipmentService {
     }
 
     const equipment = result.rows[0];
+    const { createdAt, updatedAt } = formatTimestamps(equipment);
 
     // Безопасное преобразование цены
     const rawPrice: any = (equipment as any).price;
@@ -108,14 +111,6 @@ export class EquipmentService {
       const parsed = Number(rawPrice);
       price = Number.isNaN(parsed) ? null : parsed;
     }
-
-    // Безопасное преобразование дат
-    const createdAt = equipment.created_at instanceof Date 
-      ? equipment.created_at.toISOString() 
-      : new Date(equipment.created_at).toISOString();
-    const updatedAt = equipment.updated_at instanceof Date 
-      ? equipment.updated_at.toISOString() 
-      : new Date(equipment.updated_at).toISOString();
 
     return {
       id: equipment.id,
@@ -142,7 +137,7 @@ export class EquipmentService {
     limit: number = 20,
     filters: EquipmentFilters = {},
   ): Promise<PaginatedResult<EquipmentCard>> {
-    const offset = (page - 1) * limit;
+    const pagination = calculatePagination(page, limit);
 
     // Формируем условия WHERE для фильтров
     const whereConditions: string[] = ["e.is_active = true"];
@@ -179,7 +174,7 @@ export class EquipmentService {
     const total = parseInt(countResult.rows[0]?.count || "0", 10);
 
     // Получаем данные с пагинацией
-    const dataQueryParams = [...queryParams, limit, offset];
+    const dataQueryParams = [...queryParams, pagination.limit, pagination.offset];
     const result = await this.fastify.db.query<EquipmentRow>(
       `
         SELECT
@@ -205,13 +200,7 @@ export class EquipmentService {
     );
 
     const items: EquipmentCard[] = result.rows.map((equipment) => {
-      // Безопасное преобразование дат
-      const createdAt = equipment.created_at instanceof Date 
-        ? equipment.created_at.toISOString() 
-        : new Date(equipment.created_at).toISOString();
-      const updatedAt = equipment.updated_at instanceof Date 
-        ? equipment.updated_at.toISOString() 
-        : new Date(equipment.updated_at).toISOString();
+      const { createdAt, updatedAt } = formatTimestamps(equipment);
 
       // Безопасное преобразование цены
       const rawPrice: any = (equipment as any).price;
@@ -242,14 +231,6 @@ export class EquipmentService {
       };
     });
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      items,
-      total,
-      page,
-      limit,
-      totalPages,
-    };
+    return createPaginatedResponse(items, total, pagination);
   }
 }

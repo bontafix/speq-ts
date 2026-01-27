@@ -1,4 +1,4 @@
-import { pgPool } from "../db/pg";
+import { Pool } from "pg";
 import type { EquipmentSummary, SearchQuery } from "../catalog";
 import { ParameterDictionaryService } from "../normalization/parameter-dictionary.service";
 
@@ -6,73 +6,7 @@ import { ParameterDictionaryService } from "../normalization/parameter-dictionar
  * EquipmentRepository — слой доступа к данным.
  * Здесь сконцентрированы SQL, FTS и pgvector.
  *
- * Пример реализации триггерной функции для FTS и схемы pgvector.
- *
- * 1) FTS: функция, которая заполняет search_vector при INSERT/UPDATE.
- *
- *   CREATE OR REPLACE FUNCTION equipment_search_vector_update()
- *   RETURNS trigger AS $$
- *   BEGIN
- *     NEW.search_vector :=
- *       setweight(to_tsvector('russian', coalesce(NEW.name, '')), 'A') ||
- *       setweight(to_tsvector('russian', coalesce(NEW.category, '')), 'B') ||
- *       setweight(to_tsvector('russian', coalesce(NEW.subcategory, '')), 'B') ||
- *       setweight(to_tsvector('russian', coalesce(NEW.brand, '')), 'C') ||
- *       setweight(to_tsvector('russian', coalesce(NEW.region, '')), 'C') ||
- *       setweight(to_tsvector('russian', coalesce(NEW.description, '')), 'D');
- *
- *     RETURN NEW;
- *   END;
- *   $$ LANGUAGE plpgsql;
- *
- *   CREATE TRIGGER equipment_search_vector_trigger
- *   BEFORE INSERT OR UPDATE ON equipment
- *   FOR EACH ROW EXECUTE FUNCTION equipment_search_vector_update();
- *
- * 2) Пример функции vector search (pgvector) на стороне БД:
- *
- *   -- Функция должна сама посчитать embedding для запроса
- *   -- через локальный сервис, background job и т.п.
- *   -- Здесь приведён упрощённый пример с фиктивным вектором.
- *
- *   CREATE OR REPLACE FUNCTION equipment_vector_search(p_query text, p_limit int)
- *   RETURNS SETOF equipment AS $$
- *   DECLARE
- *     q_embedding vector(768);
- *   BEGIN
- *     -- TODO: заменить на реальный вызов модели nomic-embed-text
- *     -- и заполнение q_embedding.
- *     q_embedding := (SELECT embedding FROM equipment WHERE embedding IS NOT NULL LIMIT 1);
- *
- *     RETURN QUERY
- *     SELECT e.*
- *     FROM equipment e
- *     WHERE e.embedding IS NOT NULL
- *     ORDER BY e.embedding <-> q_embedding
- *     LIMIT p_limit;
- *   END;
- *   $$ LANGUAGE plpgsql STABLE;
- *
- * 3) Пример безопасного полного переиндекса эмбеддингов с бэкапом:
- *
- *   -- Добавляем колонку-бэкап, если её ещё нет:
- *   ALTER TABLE equipment ADD COLUMN IF NOT EXISTS embedding_backup vector;
- *
- *   -- Делаем бэкап текущих эмбеддингов:
- *   UPDATE equipment
- *   SET embedding_backup = embedding
- *   WHERE embedding IS NOT NULL;
- *
- *   -- Обнуляем embedding, чтобы worker пересчитал все значения:
- *   UPDATE equipment
- *   SET embedding = NULL;
- *
- *   -- Запускаем worker из проекта (Node.js):
- *   --   npm run embed:equipment
- *
- *   -- После проверки, что новые эмбеддинги корректны,
- *   -- можно удалить бэкап:
- *   --   ALTER TABLE equipment DROP COLUMN embedding_backup;
+ * ... (комментарии сохранены)
  */
 export interface EquipmentForEmbedding {
   id: string;
@@ -82,7 +16,7 @@ export interface EquipmentForEmbedding {
 export class EquipmentRepository {
   private dictionaryService: ParameterDictionaryService | undefined;
 
-  constructor(dictionaryService?: ParameterDictionaryService) {
+  constructor(private pool: Pool, dictionaryService?: ParameterDictionaryService) {
     this.dictionaryService = dictionaryService;
   }
 
@@ -241,7 +175,7 @@ export class EquipmentRepository {
       console.log('-------------------\n');
     }
 
-    const result = await pgPool.query(sql, [...values, safeLimit, safeOffset]);
+    const result = await this.pool.query(sql, [...values, safeLimit, safeOffset]);
     return result.rows;
   }
 
@@ -300,7 +234,7 @@ export class EquipmentRepository {
       ${whereClause}
     `;
 
-    const result = await pgPool.query<{ total: number }>(sql, values);
+    const result = await this.pool.query<{ total: number }>(sql, values);
     return result.rows[0]?.total ?? 0;
   }
 
@@ -336,7 +270,7 @@ export class EquipmentRepository {
     `;
 
     try {
-      const result = await pgPool.query(sql, values);
+      const result = await this.pool.query(sql, values);
       return result.rows;
     } catch (err: any) {
       // Если vector search не работает (например, нет функции) — не роняем поиск,
@@ -474,7 +408,7 @@ export class EquipmentRepository {
         console.log('-----------------------------\n');
       }
       
-      const result = await pgPool.query(sql, params);
+      const result = await this.pool.query(sql, params);
       return result.rows;
     } catch (err: any) {
       // eslint-disable-next-line no-console
@@ -508,7 +442,7 @@ export class EquipmentRepository {
       LIMIT $1
     `;
 
-    const result = await pgPool.query(sql, [limit]);
+    const result = await this.pool.query(sql, [limit]);
     return result.rows as EquipmentForEmbedding[];
   }
 
@@ -525,7 +459,7 @@ export class EquipmentRepository {
     const literal = `[${embedding.join(",")}]`;
     // Поддержка как integer id (serial4), так и text id
     const idParam = /^\d+$/.test(id) ? parseInt(id, 10) : id;
-    await pgPool.query(
+    await this.pool.query(
       `
         UPDATE equipment
         SET embedding = $2::vector
@@ -535,4 +469,3 @@ export class EquipmentRepository {
     );
   }
 }
-

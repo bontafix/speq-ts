@@ -1,5 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { NotFoundError, ValidationError } from "../../core/errors/app-error";
+import { formatTimestamps } from "../../shared/utils/date";
+import { calculatePagination, createPaginatedResponse } from "../../shared/utils/pagination";
+import { UpdateQueryBuilder } from "../../shared/utils/query-builder";
 
 /**
  * Интерфейс категории для API
@@ -9,8 +12,8 @@ export interface Category {
   name: string;
   parentId: number | null;
   isActive: boolean | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -52,9 +55,7 @@ export class CategoryService {
    * Получить список категорий с пагинацией
    */
   async getAll(page: number = 1, limit: number = 20): Promise<PaginatedCategoryResult> {
-    const safePage = page > 0 ? page : 1;
-    const safeLimit = limit > 0 ? limit : 20;
-    const offset = (safePage - 1) * safeLimit;
+    const pagination = calculatePagination(page, limit);
 
     // Общее количество категорий
     const countResult = await this.fastify.db.query<{ count: string }>(
@@ -81,18 +82,11 @@ export class CategoryService {
         ORDER BY id
         LIMIT $1 OFFSET $2
       `,
-      [safeLimit, offset],
+      [pagination.limit, pagination.offset],
     );
 
     const items: Category[] = result.rows.map((row) => {
-      const createdAt =
-        row.created_at instanceof Date
-          ? row.created_at.toISOString()
-          : new Date(row.created_at).toISOString();
-      const updatedAt =
-        row.updated_at instanceof Date
-          ? row.updated_at.toISOString()
-          : new Date(row.updated_at).toISOString();
+      const { createdAt, updatedAt } = formatTimestamps(row);
 
       return {
         id: row.id,
@@ -104,15 +98,7 @@ export class CategoryService {
       };
     });
 
-    const totalPages = Math.ceil(total / safeLimit) || 1;
-
-    return {
-      items,
-      total,
-      page: safePage,
-      limit: safeLimit,
-      totalPages,
-    };
+    return createPaginatedResponse(items, total, pagination);
   }
 
   /**
@@ -140,12 +126,7 @@ export class CategoryService {
     }
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       id: row.id,
@@ -197,12 +178,7 @@ export class CategoryService {
     );
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       id: row.id,
@@ -222,7 +198,7 @@ export class CategoryService {
     await this.getById(categoryId);
 
     // Проверка существования родительской категории, если указана
-    if (data.parentId !== null && data.parentId !== undefined) {
+    if (data.parentId !== undefined && data.parentId !== null) {
       if (data.parentId === categoryId) {
         throw new ValidationError("Category cannot be its own parent");
       }
@@ -235,34 +211,23 @@ export class CategoryService {
       }
     }
 
-    // Подготовка данных для обновления
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
-
-    if (data.name !== undefined) {
-      if (data.name.trim().length === 0) {
-        throw new ValidationError("Name cannot be empty");
-      }
-      updates.push(`name = $${paramIndex++}`);
-      values.push(data.name);
-    }
-    if (data.parentId !== undefined) {
-      updates.push(`parent_id = $${paramIndex++}`);
-      values.push(data.parentId);
-    }
-    if (data.isActive !== undefined) {
-      updates.push(`is_active = $${paramIndex++}`);
-      values.push(data.isActive);
+    if (data.name !== undefined && data.name.trim().length === 0) {
+      throw new ValidationError("Name cannot be empty");
     }
 
-    if (updates.length === 0) {
+    const builder = new UpdateQueryBuilder();
+    builder.addField('name', data.name);
+    builder.addField('parent_id', data.parentId);
+    builder.addField('is_active', data.isActive);
+    
+    if (!builder.hasUpdates()) {
       return this.getById(categoryId);
     }
+    
+    builder.addTimestamp('updated_at');
 
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(categoryId);
-
+    const { sql, values } = builder.build('categories', 'id', categoryId);
+    
     const result = await this.fastify.db.query<{
       id: number;
       name: string;
@@ -270,23 +235,10 @@ export class CategoryService {
       is_active: boolean | null;
       created_at: Date;
       updated_at: Date;
-    }>(
-      `
-        UPDATE categories
-        SET ${updates.join(", ")}
-        WHERE id = $${paramIndex}
-        RETURNING id, name, parent_id, is_active, created_at, updated_at
-      `,
-      values,
-    );
+    }>(sql, values);
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       id: row.id,

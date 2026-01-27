@@ -2,6 +2,8 @@ import { FastifyInstance } from "fastify";
 import { hashPassword } from "../../shared/lib/password";
 import { NotFoundError, ValidationError } from "../../core/errors/app-error";
 import { UserRepository, UserRow } from "./user.repository";
+import { formatDate } from "../../shared/utils/date";
+import { UpdateQueryBuilder } from "../../shared/utils/query-builder";
 
 /**
  * Интерфейс пользователя для API
@@ -15,8 +17,8 @@ export interface User {
   limitDocument: number | null;
   limitSizePdf: number | null;
   roles: string[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -83,14 +85,6 @@ export class UserService {
     for (const row of result.rows) {
       const roles = await this.userRepository.getUserRoles(row.id);
       
-      // Безопасное преобразование дат
-      const createdAt = row.createdAt instanceof Date 
-        ? row.createdAt.toISOString() 
-        : new Date(row.createdAt).toISOString();
-      const updatedAt = row.updatedAt instanceof Date 
-        ? row.updatedAt.toISOString() 
-        : new Date(row.updatedAt).toISOString();
-      
       users.push({
         id: row.id,
         username: row.username,
@@ -100,8 +94,8 @@ export class UserService {
         limitDocument: row.limit_document ?? null,
         limitSizePdf: row.limit_size_pdf ?? null,
         roles,
-        createdAt,
-        updatedAt,
+        createdAt: formatDate(row.createdAt),
+        updatedAt: formatDate(row.updatedAt),
       });
     }
 
@@ -139,14 +133,6 @@ export class UserService {
     const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
-    // Безопасное преобразование дат
-    const createdAt = row.createdAt instanceof Date 
-      ? row.createdAt.toISOString() 
-      : new Date(row.createdAt).toISOString();
-    const updatedAt = row.updatedAt instanceof Date 
-      ? row.updatedAt.toISOString() 
-      : new Date(row.updatedAt).toISOString();
-
     return {
       id: row.id,
       username: row.username,
@@ -156,8 +142,8 @@ export class UserService {
       limitDocument: row.limit_document ?? null,
       limitSizePdf: row.limit_size_pdf ?? null,
       roles,
-      createdAt,
-      updatedAt,
+      createdAt: formatDate(row.createdAt),
+      updatedAt: formatDate(row.updatedAt),
     };
   }
 
@@ -216,14 +202,6 @@ export class UserService {
     const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
 
-    // Безопасное преобразование дат
-    const createdAt = row.createdAt instanceof Date 
-      ? row.createdAt.toISOString() 
-      : new Date(row.createdAt).toISOString();
-    const updatedAt = row.updatedAt instanceof Date 
-      ? row.updatedAt.toISOString() 
-      : new Date(row.updatedAt).toISOString();
-
     return {
       id: row.id,
       username: row.username,
@@ -233,8 +211,8 @@ export class UserService {
       limitDocument: row.limit_document ?? null,
       limitSizePdf: row.limit_size_pdf ?? null,
       roles,
-      createdAt,
-      updatedAt,
+      createdAt: formatDate(row.createdAt),
+      updatedAt: formatDate(row.updatedAt),
     };
   }
 
@@ -256,47 +234,26 @@ export class UserService {
       }
     }
 
-    // Подготовка данных для обновления
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    const builder = new UpdateQueryBuilder();
+    builder.addField('username', data.username);
+    builder.addField('email', data.email);
+    builder.addField('name', data.name);
+    builder.addField('status', data.status);
+    builder.addField('limit_document', data.limitDocument);
+    builder.addField('limit_size_pdf', data.limitSizePdf);
 
-    if (data.username !== undefined) {
-      updates.push(`username = $${paramIndex++}`);
-      values.push(data.username || null);
-    }
-    if (data.email !== undefined) {
-      updates.push(`email = $${paramIndex++}`);
-      values.push(data.email || null);
-    }
     if (data.password !== undefined) {
       const hashedPassword = await hashPassword(data.password);
-      updates.push(`password = $${paramIndex++}`);
-      values.push(hashedPassword);
+      builder.addField('password', hashedPassword);
     }
-    if (data.name !== undefined) {
-      updates.push(`name = $${paramIndex++}`);
-      values.push(data.name || null);
-    }
-    if (data.status !== undefined) {
-      updates.push(`status = $${paramIndex++}`);
-      values.push(data.status);
-    }
-    if (data.limitDocument !== undefined) {
-      updates.push(`limit_document = $${paramIndex++}`);
-      values.push(data.limitDocument || null);
-    }
-    if (data.limitSizePdf !== undefined) {
-      updates.push(`limit_size_pdf = $${paramIndex++}`);
-      values.push(data.limitSizePdf || null);
-    }
-
-    if (updates.length === 0) {
+    
+    if (!builder.hasUpdates()) {
       return this.getById(userId);
     }
 
-    updates.push(`"updatedAt" = CURRENT_TIMESTAMP`);
-    values.push(userId);
+    builder.addTimestamp('"updatedAt"');
+
+    const { sql, values } = builder.build('users', 'id', userId);
 
     const result = await this.fastify.db.query<{
       id: number;
@@ -309,26 +266,10 @@ export class UserService {
       limit_size_pdf: number | null;
       createdAt: Date;
       updatedAt: Date;
-    }>(
-      `
-        UPDATE users
-        SET ${updates.join(", ")}
-        WHERE id = $${paramIndex}
-        RETURNING id, username, email, password, name, status, limit_document, limit_size_pdf, "createdAt", "updatedAt"
-      `,
-      values,
-    );
+    }>(sql, values);
 
     const row = result.rows[0]!;
     const roles = await this.userRepository.getUserRoles(row.id);
-
-    // Безопасное преобразование дат
-    const createdAt = row.createdAt instanceof Date 
-      ? row.createdAt.toISOString() 
-      : new Date(row.createdAt).toISOString();
-    const updatedAt = row.updatedAt instanceof Date 
-      ? row.updatedAt.toISOString() 
-      : new Date(row.updatedAt).toISOString();
 
     return {
       id: row.id,
@@ -339,8 +280,8 @@ export class UserService {
       limitDocument: row.limit_document ?? null,
       limitSizePdf: row.limit_size_pdf ?? null,
       roles,
-      createdAt,
-      updatedAt,
+      createdAt: formatDate(row.createdAt),
+      updatedAt: formatDate(row.updatedAt),
     };
   }
 

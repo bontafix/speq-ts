@@ -7,6 +7,7 @@ import {
   PaginatedCategoryResult,
 } from "./category.service";
 import { sendSuccess } from "../../shared/utils/api-response";
+import { parseId } from "../../shared/utils/validation";
 
 /**
  * Интерфейс параметров пути
@@ -41,10 +42,7 @@ export class CategoryController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const categoryId = parseInt(id, 10);
-    if (isNaN(categoryId)) {
-      throw new Error("Invalid category ID");
-    }
+    const categoryId = parseId(id, 'category');
     const category = await this.service.getById(categoryId);
     sendSuccess<Category>(reply, category);
   }
@@ -69,10 +67,7 @@ export class CategoryController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const categoryId = parseInt(id, 10);
-    if (isNaN(categoryId)) {
-      throw new Error("Invalid category ID");
-    }
+    const categoryId = parseId(id, 'category');
     const data = request.body;
     const category = await this.service.update(categoryId, data);
     sendSuccess<Category>(reply, category);
@@ -86,10 +81,7 @@ export class CategoryController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const categoryId = parseInt(id, 10);
-    if (isNaN(categoryId)) {
-      throw new Error("Invalid category ID");
-    }
+    const categoryId = parseId(id, 'category');
     await this.service.delete(categoryId);
     reply.status(204).send();
   }

@@ -1,5 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { NotFoundError, ValidationError } from "../../core/errors/app-error";
+import { formatTimestamps } from "../../shared/utils/date";
+import { calculatePagination, createPaginatedResponse } from "../../shared/utils/pagination";
+import { UpdateQueryBuilder } from "../../shared/utils/query-builder";
 
 /**
  * Интерфейс бренда для API
@@ -8,8 +11,8 @@ export interface Brand {
   id: number;
   name: string;
   isActive: boolean | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -49,9 +52,7 @@ export class BrandService {
    * Получить список брендов с пагинацией
    */
   async getAll(page: number = 1, limit: number = 20): Promise<PaginatedBrandResult> {
-    const safePage = page > 0 ? page : 1;
-    const safeLimit = limit > 0 ? limit : 20;
-    const offset = (safePage - 1) * safeLimit;
+    const pagination = calculatePagination(page, limit);
 
     // Общее количество брендов
     const countResult = await this.fastify.db.query<{ count: string }>(
@@ -77,16 +78,11 @@ export class BrandService {
         ORDER BY id
         LIMIT $1 OFFSET $2
       `,
-      [safeLimit, offset],
+      [pagination.limit, pagination.offset],
     );
 
     const items: Brand[] = result.rows.map((row) => {
-      const createdAt = row.created_at instanceof Date 
-        ? row.created_at.toISOString() 
-        : new Date(row.created_at).toISOString();
-      const updatedAt = row.updated_at instanceof Date 
-        ? row.updated_at.toISOString() 
-        : new Date(row.updated_at).toISOString();
+      const { createdAt, updatedAt } = formatTimestamps(row);
 
       return {
         id: row.id,
@@ -97,15 +93,7 @@ export class BrandService {
       };
     });
 
-    const totalPages = Math.ceil(total / safeLimit) || 1;
-
-    return {
-      items,
-      total,
-      page: safePage,
-      limit: safeLimit,
-      totalPages,
-    };
+    return createPaginatedResponse(items, total, pagination);
   }
 
   /**
@@ -132,12 +120,7 @@ export class BrandService {
     }
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       id: row.id,
@@ -184,12 +167,7 @@ export class BrandService {
     );
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       id: row.id,
@@ -221,50 +199,29 @@ export class BrandService {
       }
     }
 
-    // Подготовка данных для обновления
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
-
-    if (data.name !== undefined) {
-      updates.push(`name = $${paramIndex++}`);
-      values.push(data.name);
-    }
-    if (data.isActive !== undefined) {
-      updates.push(`is_active = $${paramIndex++}`);
-      values.push(data.isActive);
-    }
-
-    if (updates.length === 0) {
+    const builder = new UpdateQueryBuilder();
+    builder.addField('name', data.name);
+    builder.addField('is_active', data.isActive, 'is_active');
+    
+    if (!builder.hasUpdates()) {
       return this.getById(brandId);
     }
+    
+    // Добавляем обновление updated_at
+    builder.addTimestamp('updated_at');
 
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(brandId);
-
+    const { sql, values } = builder.build('brands', 'id', brandId);
+    
     const result = await this.fastify.db.query<{
       id: number;
       name: string;
       is_active: boolean | null;
       created_at: Date;
       updated_at: Date;
-    }>(
-      `
-        UPDATE brands
-        SET ${updates.join(", ")}
-        WHERE id = $${paramIndex}
-        RETURNING id, name, is_active, created_at, updated_at
-      `,
-      values,
-    );
+    }>(sql, values);
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       id: row.id,

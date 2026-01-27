@@ -1,5 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { NotFoundError, ValidationError } from "../../core/errors/app-error";
+import { formatTimestamps } from "../../shared/utils/date";
+import { UpdateQueryBuilder } from "../../shared/utils/query-builder";
 
 /**
  * Интерфейс параметра словаря для API
@@ -21,8 +23,8 @@ export interface ParameterDictionary {
   isFilterable: boolean | null;
   priority: number | null;
   version: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -108,12 +110,7 @@ export class ParameterDictionaryService {
     );
 
     return result.rows.map((row) => {
-      const createdAt = row.created_at instanceof Date 
-        ? row.created_at.toISOString() 
-        : new Date(row.created_at).toISOString();
-      const updatedAt = row.updated_at instanceof Date 
-        ? row.updated_at.toISOString() 
-        : new Date(row.updated_at).toISOString();
+      const { createdAt, updatedAt } = formatTimestamps(row);
 
       return {
         key: row.key,
@@ -177,12 +174,7 @@ export class ParameterDictionaryService {
     }
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       key: row.key,
@@ -287,12 +279,7 @@ export class ParameterDictionaryService {
     );
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       key: row.key,
@@ -323,90 +310,35 @@ export class ParameterDictionaryService {
     // Проверка существования
     await this.getByKey(key);
 
-    // Подготовка данных для обновления
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    const builder = new UpdateQueryBuilder();
+    builder.addFieldSnakeCase('labelRu', data.labelRu);
+    builder.addFieldSnakeCase('labelEn', data.labelEn);
+    builder.addFieldSnakeCase('descriptionRu', data.descriptionRu);
+    builder.addField('category', data.category);
+    builder.addFieldSnakeCase('paramType', data.paramType);
+    builder.addField('unit', data.unit);
+    builder.addFieldSnakeCase('minValue', data.minValue);
+    builder.addFieldSnakeCase('maxValue', data.maxValue);
+    builder.addFieldSnakeCase('sqlExpression', data.sqlExpression);
+    builder.addFieldSnakeCase('isSearchable', data.isSearchable);
+    builder.addFieldSnakeCase('isFilterable', data.isFilterable);
+    builder.addField('priority', data.priority);
+    builder.addField('version', data.version);
 
-    if (data.labelRu !== undefined) {
-      if (data.labelRu.trim().length === 0) {
-        throw new ValidationError("LabelRu cannot be empty");
-      }
-      updates.push(`label_ru = $${paramIndex++}`);
-      values.push(data.labelRu);
-    }
-    if (data.labelEn !== undefined) {
-      updates.push(`label_en = $${paramIndex++}`);
-      values.push(data.labelEn);
-    }
-    if (data.descriptionRu !== undefined) {
-      updates.push(`description_ru = $${paramIndex++}`);
-      values.push(data.descriptionRu);
-    }
-    if (data.category !== undefined) {
-      if (data.category.trim().length === 0) {
-        throw new ValidationError("Category cannot be empty");
-      }
-      updates.push(`category = $${paramIndex++}`);
-      values.push(data.category);
-    }
-    if (data.paramType !== undefined) {
-      if (data.paramType.trim().length === 0) {
-        throw new ValidationError("ParamType cannot be empty");
-      }
-      updates.push(`param_type = $${paramIndex++}`);
-      values.push(data.paramType);
-    }
-    if (data.unit !== undefined) {
-      updates.push(`unit = $${paramIndex++}`);
-      values.push(data.unit);
-    }
-    if (data.minValue !== undefined) {
-      updates.push(`min_value = $${paramIndex++}`);
-      values.push(data.minValue);
-    }
-    if (data.maxValue !== undefined) {
-      updates.push(`max_value = $${paramIndex++}`);
-      values.push(data.maxValue);
-    }
     if (data.enumValues !== undefined) {
-      updates.push(`enum_values = $${paramIndex++}`);
-      values.push(data.enumValues ? JSON.stringify(data.enumValues) : null);
+      builder.addFieldSnakeCase('enumValues', data.enumValues ? JSON.stringify(data.enumValues) : null);
     }
     if (data.aliases !== undefined) {
-      updates.push(`aliases = $${paramIndex++}`);
-      values.push(data.aliases ? JSON.stringify(data.aliases) : null);
+      builder.addField('aliases', data.aliases ? JSON.stringify(data.aliases) : null);
     }
-    if (data.sqlExpression !== undefined) {
-      if (data.sqlExpression.trim().length === 0) {
-        throw new ValidationError("SqlExpression cannot be empty");
-      }
-      updates.push(`sql_expression = $${paramIndex++}`);
-      values.push(data.sqlExpression);
-    }
-    if (data.isSearchable !== undefined) {
-      updates.push(`is_searchable = $${paramIndex++}`);
-      values.push(data.isSearchable);
-    }
-    if (data.isFilterable !== undefined) {
-      updates.push(`is_filterable = $${paramIndex++}`);
-      values.push(data.isFilterable);
-    }
-    if (data.priority !== undefined) {
-      updates.push(`priority = $${paramIndex++}`);
-      values.push(data.priority);
-    }
-    if (data.version !== undefined) {
-      updates.push(`version = $${paramIndex++}`);
-      values.push(data.version);
-    }
-
-    if (updates.length === 0) {
+    
+    if (!builder.hasUpdates()) {
       return this.getByKey(key);
     }
 
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(key);
+    builder.addTimestamp('updated_at');
+
+    const { sql, values } = builder.build('parameter_dictionary', 'key', key);
 
     const result = await this.fastify.db.query<{
       key: string;
@@ -427,25 +359,10 @@ export class ParameterDictionaryService {
       version: string | null;
       created_at: Date;
       updated_at: Date;
-    }>(
-      `
-        UPDATE parameter_dictionary
-        SET ${updates.join(", ")}
-        WHERE key = $${paramIndex}
-        RETURNING key, label_ru, label_en, description_ru, category, param_type, unit,
-                  min_value, max_value, enum_values, aliases, sql_expression,
-                  is_searchable, is_filterable, priority, version, created_at, updated_at
-      `,
-      values,
-    );
+    }>(sql, values);
 
     const row = result.rows[0]!;
-    const createdAt = row.created_at instanceof Date 
-      ? row.created_at.toISOString() 
-      : new Date(row.created_at).toISOString();
-    const updatedAt = row.updated_at instanceof Date 
-      ? row.updated_at.toISOString() 
-      : new Date(row.updated_at).toISOString();
+    const { createdAt, updatedAt } = formatTimestamps(row);
 
     return {
       key: row.key,

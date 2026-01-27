@@ -8,7 +8,8 @@ import { LLMProviderFactory } from "../../../llm";
 
 export async function searchPlugin(fastify: FastifyInstance) {
   const dictionaryService = new ParameterDictionaryService();
-  const repository = new EquipmentRepository(dictionaryService);
+  // Передаем пул соединений из fastify.db
+  const repository = new EquipmentRepository(fastify.db, dictionaryService);
   const llmFactory = new LLMProviderFactory();
   
   // Load dictionary asynchronously

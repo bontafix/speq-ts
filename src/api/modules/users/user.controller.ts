@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { UserService, CreateUserData, UpdateUserData, User } from "./user.service";
 import { sendSuccess } from "../../shared/utils/api-response";
+import { parseId } from "../../shared/utils/validation";
 
 /**
  * Интерфейс параметров пути
@@ -35,10 +36,7 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const userId = parseInt(id, 10);
-    if (isNaN(userId)) {
-      throw new Error("Invalid user ID");
-    }
+    const userId = parseId(id, 'user');
     const user = await this.service.getById(userId);
     sendSuccess<User>(reply, user);
   }
@@ -63,10 +61,7 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const userId = parseInt(id, 10);
-    if (isNaN(userId)) {
-      throw new Error("Invalid user ID");
-    }
+    const userId = parseId(id, 'user');
     const data = request.body;
     const user = await this.service.update(userId, data);
     sendSuccess<User>(reply, user);
@@ -80,10 +75,7 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const userId = parseInt(id, 10);
-    if (isNaN(userId)) {
-      throw new Error("Invalid user ID");
-    }
+    const userId = parseId(id, 'user');
     await this.service.delete(userId);
     reply.status(204).send();
   }
@@ -96,10 +88,7 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id } = request.params;
-    const userId = parseInt(id, 10);
-    if (isNaN(userId)) {
-      throw new Error("Invalid user ID");
-    }
+    const userId = parseId(id, 'user');
     const { roleId } = request.body;
     await this.service.assignRole(userId, roleId);
     reply.status(204).send();
@@ -113,11 +102,8 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     const { id, roleId } = request.params;
-    const userId = parseInt(id, 10);
-    const roleIdNum = parseInt(roleId, 10);
-    if (isNaN(userId) || isNaN(roleIdNum)) {
-      throw new Error("Invalid user ID or role ID");
-    }
+    const userId = parseId(id, 'user');
+    const roleIdNum = parseId(roleId, 'role');
     await this.service.removeRole(userId, roleIdNum);
     reply.status(204).send();
   }

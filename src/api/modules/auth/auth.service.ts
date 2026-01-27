@@ -3,6 +3,7 @@ import { hashPassword, comparePassword } from "../../shared/lib/password";
 import { createToken, JwtPayload } from "../../shared/lib/jwt";
 import { ValidationError, UnauthorizedError } from "../../core/errors/app-error";
 import { UserRepository, UserRow } from "../users/user.repository";
+import { formatDate } from "../../shared/utils/date";
 
 /**
  * Интерфейс пользователя для API
@@ -14,8 +15,8 @@ export interface User {
   name: string | null;
   status: boolean | null;
   roles: string[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -191,14 +192,6 @@ export class AuthService {
     // Получаем роли
     const roles = await this.userRepository.getUserRoles(userId);
 
-    // Безопасное преобразование дат
-    const createdAt = userRow.createdAt instanceof Date 
-      ? userRow.createdAt.toISOString() 
-      : new Date(userRow.createdAt).toISOString();
-    const updatedAt = userRow.updatedAt instanceof Date 
-      ? userRow.updatedAt.toISOString() 
-      : new Date(userRow.updatedAt).toISOString();
-
     return {
       id: userRow.id,
       username: userRow.username,
@@ -206,8 +199,8 @@ export class AuthService {
       name: userRow.name,
       status: userRow.status,
       roles,
-      createdAt,
-      updatedAt,
+      createdAt: formatDate(userRow.createdAt),
+      updatedAt: formatDate(userRow.updatedAt),
     };
   }
 
