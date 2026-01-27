@@ -5,22 +5,22 @@
 export interface ParameterDictionary {
   key: string;
   labelRu: string;
-  labelEn?: string | null;
-  descriptionRu?: string | null;
+  labelEn: string | null;
+  descriptionRu: string | null;
   category: string;
   paramType: 'number' | 'enum' | 'boolean' | 'string';
-  unit?: string | null;
-  minValue?: number | null;
-  maxValue?: number | null;
-  enumValues?: Record<string, string> | null;
+  unit: string | null;
+  minValue: number | null;
+  maxValue: number | null;
+  enumValues: Record<string, string> | null;
   aliases: string[] | null;
   sqlExpression: string;
-  isSearchable?: boolean | null;
-  isFilterable?: boolean | null;
+  isSearchable: boolean | null;
+  isFilterable: boolean | null;
   priority: number | null;
-  version?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
+  version: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /**
@@ -54,20 +54,20 @@ export function rowToParameterDictionary(row: ParameterDictionaryRow): Parameter
   return {
     key: row.key,
     labelRu: row.label_ru,
-    labelEn: row.label_en,
-    descriptionRu: row.description_ru,
+    labelEn: row.label_en ?? null,
+    descriptionRu: row.description_ru ?? null,
     category: row.category,
     paramType: row.param_type as ParameterDictionary['paramType'],
-    unit: row.unit,
-    minValue: typeof row.min_value === 'string' ? parseFloat(row.min_value) : row.min_value,
-    maxValue: typeof row.max_value === 'string' ? parseFloat(row.max_value) : row.max_value,
-    enumValues: row.enum_values,
+    unit: row.unit ?? null,
+    minValue: typeof row.min_value === 'string' ? parseFloat(row.min_value) : (row.min_value ?? null),
+    maxValue: typeof row.max_value === 'string' ? parseFloat(row.max_value) : (row.max_value ?? null),
+    enumValues: row.enum_values ?? null,
     aliases: Array.isArray(row.aliases) ? row.aliases : null,
     sqlExpression: row.sql_expression,
-    isSearchable: row.is_searchable,
-    isFilterable: row.is_filterable,
+    isSearchable: row.is_searchable ?? null,
+    isFilterable: row.is_filterable ?? null,
     priority: row.priority,
-    version: row.version,
+    version: row.version ?? null,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };

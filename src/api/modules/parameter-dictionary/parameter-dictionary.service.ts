@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { NotFoundError, ValidationError } from "../../core/errors/app-error";
+import { NotFoundError, ValidationError, InternalServerError } from "../../core/errors/app-error";
 import { UpdateQueryBuilder } from "../../shared/utils/query-builder";
 import { 
   ParameterDictionary, 
@@ -94,7 +94,13 @@ export class ParameterDictionaryService {
       throw new NotFoundError("Parameter dictionary entry not found");
     }
 
-    return rowToParameterDictionary(result.rows[0]);
+    const row = result.rows[0];
+    // Дополнительная проверка для TypeScript, чтобы исключить undefined
+    if (!row) {
+      throw new InternalServerError("Failed to load parameter dictionary entry");
+    }
+
+    return rowToParameterDictionary(row);
   }
 
   /**
@@ -158,7 +164,11 @@ export class ParameterDictionaryService {
       ],
     );
 
-    return rowToParameterDictionary(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      throw new InternalServerError("Failed to create parameter dictionary entry");
+    }
+    return rowToParameterDictionary(row);
   }
 
   /**
@@ -200,7 +210,11 @@ export class ParameterDictionaryService {
 
     const result = await this.fastify.db.query<ParameterDictionaryRow>(sql, values);
 
-    return rowToParameterDictionary(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      throw new InternalServerError("Failed to update parameter dictionary entry");
+    }
+    return rowToParameterDictionary(row);
   }
 
   /**

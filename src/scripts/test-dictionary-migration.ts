@@ -130,7 +130,7 @@ async function testDictionaryMigration() {
     // Подсчитываем статистику
     let totalAliases = 0;
     for (const param of dictionary) {
-      totalAliases += param.aliases.length;
+      totalAliases += param.aliases?.length ?? 0;
     }
     console.log(`📊 Статистика справочника:`);
     console.log(`   - Параметров: ${dictionary.length}`);

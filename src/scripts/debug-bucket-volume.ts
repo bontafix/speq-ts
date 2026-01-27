@@ -12,17 +12,17 @@ async function main() {
   await dictionaryService.loadDictionary();
   
   const bucketParams = dictionaryService.getDictionary().filter(p => 
-    p.label_ru.toLowerCase().includes("объем ковша") || 
+    p.labelRu.toLowerCase().includes("объем ковша") || 
     p.key.includes("bucket") ||
-    p.aliases.some(a => a.toLowerCase().includes("объем ковша"))
+    (p.aliases?.some(a => a.toLowerCase().includes("объем ковша")) ?? false)
   );
 
   console.log("Dictionary entries for Bucket Volume:");
   bucketParams.forEach(p => {
     console.log(`- Key: ${p.key}`);
-    console.log(`  Label: ${p.label_ru}`);
+    console.log(`  Label: ${p.labelRu}`);
     console.log(`  Aliases: ${JSON.stringify(p.aliases)}`);
-    console.log(`  Type: ${p.param_type}, Unit: ${p.unit}`);
+    console.log(`  Type: ${p.paramType}, Unit: ${p.unit}`);
     console.log("---");
   });
 

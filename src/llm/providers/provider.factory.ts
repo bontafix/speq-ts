@@ -38,12 +38,13 @@ export class LLMProviderFactory {
   private readonly defaultOllamaChatModel = "qwen2.5:7b-instruct-q4_K_M";
 
   constructor(config?: Partial<ProviderConfig>) {
+    const envChatProvider = process.env.LLM_CHAT_PROVIDER;
     const envEmbeddingsProvider = process.env.LLM_EMBEDDINGS_PROVIDER;
 
     this.config = {
-      // Важно: в этом проекте чат-провайдер фиксирован и не должен переключаться
-      // ни через ENV, ни через runtime API.
-      chatProvider: "groq",
+      // Дефолтный чат-провайдер — Groq, но его можно
+      // переопределить через LLM_CHAT_PROVIDER или через setChatProvider().
+      chatProvider: this.normalizeChatProvider(envChatProvider),
       embeddingsProvider: this.normalizeEmbeddingsProvider(envEmbeddingsProvider),
       fallbackProviders: this.parseFallbackProviders(process.env.LLM_FALLBACK_PROVIDERS),
       silent: process.env.LLM_FALLBACK_SILENT === "true",
@@ -79,6 +80,13 @@ export class LLMProviderFactory {
 
   private isProviderType(value: string): value is ProviderType {
     return value === "ollama" || value === "groq" || value === "openai";
+  }
+
+  private normalizeChatProvider(envValue?: string): ProviderType {
+    if (!envValue) return "groq";
+    const trimmed = envValue.trim();
+    if (this.isProviderType(trimmed)) return trimmed;
+    return "groq";
   }
 
   private normalizeEmbeddingsProvider(envValue?: string): ProviderType {
@@ -153,19 +161,6 @@ export class LLMProviderFactory {
     preferredType: ProviderType,
     operation: "chat" | "embeddings",
   ): Promise<LLMProvider> {
-    // Жёсткое правило проекта: для chat используем только Groq (без fallback).
-    if (operation === "chat") {
-      const groq = this.providers.get("groq");
-      if (!groq) {
-        throw new Error('Groq провайдер не инициализирован. Укажите GROQ_API_KEY.');
-      }
-      const ok = await groq.ping();
-      if (!ok) {
-        throw new Error("Groq провайдер недоступен (ping failed).");
-      }
-      return groq;
-    }
-
     // Для embeddings Groq принципиально не подходит.
     if (operation === "embeddings" && preferredType === "groq") {
       if (!this.config.silent) {
@@ -226,6 +221,10 @@ export class LLMProviderFactory {
     const provider = await this.getProviderWithFallback(this.config.chatProvider, "chat");
     const providerType = provider.name as ProviderType;
     const model = this.resolveChatModel(providerType, options.model);
+    if (process.env.DEBUG_LLM === "true") {
+      // eslint-disable-next-line no-console
+      console.log(`[LLM][chat] provider=${providerType}, model=${model}`);
+    }
     return provider.chat({ ...options, model });
   }
 
@@ -233,13 +232,11 @@ export class LLMProviderFactory {
    * Выполнить chat completion с указанным провайдером (без fallback).
    */
   async chatWithProvider(providerType: ProviderType, options: ChatOptions): Promise<ChatResponse> {
-    // В этом проекте запрещено выполнять chat через не-Groq провайдеры.
-    if (providerType !== "groq") {
-      throw new Error(`Chat через провайдер "${providerType}" запрещён. Разрешён только "groq".`);
+    const provider = this.providers.get(providerType);
+    if (!provider) {
+      throw new Error(`Провайдер ${providerType} не инициализирован. Укажите соответствующий API ключ.`);
     }
-    const provider = this.providers.get("groq");
-    if (!provider) throw new Error('Groq провайдер не инициализирован. Укажите GROQ_API_KEY.');
-    const model = this.resolveChatModel("groq", options.model);
+    const model = this.resolveChatModel(providerType, options.model);
     return provider.chat({ ...options, model });
   }
 
@@ -248,6 +245,10 @@ export class LLMProviderFactory {
    */
   async embeddings(options: EmbeddingOptions): Promise<EmbeddingResponse> {
     const provider = await this.getProviderWithFallback(this.config.embeddingsProvider, "embeddings");
+    if (process.env.DEBUG_LLM === "true") {
+      // eslint-disable-next-line no-console
+      console.log(`[LLM][embeddings] provider=${provider.name}, model=${options.model}`);
+    }
     return provider.embeddings(options);
   }
 
@@ -289,14 +290,10 @@ export class LLMProviderFactory {
    * Изменить основной провайдер для chat completion.
    */
   setChatProvider(providerType: ProviderType): void {
-    // Важно: чат-провайдер в этом проекте фиксирован.
-    if (providerType !== "groq") {
-      throw new Error(`Нельзя установить chat provider "${providerType}". Разрешён только "groq".`);
+    if (!this.providers.has(providerType)) {
+      throw new Error(`Провайдер ${providerType} не инициализирован`);
     }
-    if (!this.providers.has("groq")) {
-      throw new Error('Groq провайдер не инициализирован. Укажите GROQ_API_KEY.');
-    }
-    this.config.chatProvider = "groq";
+    this.config.chatProvider = providerType;
   }
 
   /**

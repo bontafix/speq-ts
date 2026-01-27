@@ -41,32 +41,32 @@ export class ParameterNormalizerService {
       // Нормализуем значение в зависимости от типа
       let normalizedValue: any = null;
 
-      if (paramDef.param_type === "number") {
+      if (paramDef.paramType === "number") {
         normalizedValue = this.unitParser.parseValue(rawValue, paramDef.unit || "");
 
         // Мягкая валидация диапазона (только предупреждение, не отбрасываем значение)
         if (normalizedValue != null && process.env.DEBUG) {
-          if (paramDef.min_value != null && normalizedValue < paramDef.min_value) {
+          if (paramDef.minValue != null && normalizedValue < paramDef.minValue) {
             console.warn(
-              `[Normalization] Значение ${normalizedValue} ниже рекомендованного минимума ${paramDef.min_value} для ${paramDef.key} (единица: ${paramDef.unit})`
+              `[Normalization] Значение ${normalizedValue} ниже рекомендованного минимума ${paramDef.minValue} для ${paramDef.key} (единица: ${paramDef.unit})`
             );
           }
-          if (paramDef.max_value != null && normalizedValue > paramDef.max_value) {
+          if (paramDef.maxValue != null && normalizedValue > paramDef.maxValue) {
             console.warn(
-              `[Normalization] Значение ${normalizedValue} выше рекомендованного максимума ${paramDef.max_value} для ${paramDef.key} (единица: ${paramDef.unit})`
+              `[Normalization] Значение ${normalizedValue} выше рекомендованного максимума ${paramDef.maxValue} для ${paramDef.key} (единица: ${paramDef.unit})`
             );
           }
         }
-      } else if (paramDef.param_type === "enum") {
+      } else if (paramDef.paramType === "enum") {
         normalizedValue = this.enumMapper.mapEnumValue(String(rawValue), paramDef);
-      } else if (paramDef.param_type === "boolean") {
+      } else if (paramDef.paramType === "boolean") {
         const str = String(rawValue).toLowerCase();
         if (str === "true" || str === "1" || str === "да" || str === "yes") {
           normalizedValue = true;
         } else if (str === "false" || str === "0" || str === "нет" || str === "no") {
           normalizedValue = false;
         }
-      } else if (paramDef.param_type === "string") {
+      } else if (paramDef.paramType === "string") {
         // Для строковых полей (например, "Шины", "Кабина") сохраняем как есть.
         // Важно: пустые строки считаем невалидными.
         if (typeof rawValue === "string") {
@@ -117,4 +117,3 @@ export class ParameterNormalizerService {
     };
   }
 }
-

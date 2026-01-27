@@ -7,64 +7,76 @@
 
 import { UnitParser } from '../normalization/unit-parser';
 import { EnumMapper } from '../normalization/enum-mapper';
-import type { ParameterDictionary } from '../normalization/parameter-dictionary.service';
+import type { ParameterDictionary } from '../shared/types/parameter-dictionary';
+
+// Упрощённый тип для тестов (совместим по ключевым полям)
+type TestParameterDictionary = Pick<
+  ParameterDictionary,
+  'key' | 'labelRu' | 'category' | 'paramType' | 'unit' | 'minValue' | 'maxValue' | 'enumValues' | 'aliases' | 'sqlExpression' | 'priority'
+>;
 
 // Mock словарь параметров
-const MOCK_DICTIONARY: ParameterDictionary[] = [
+const MOCK_DICTIONARY: TestParameterDictionary[] = [
   {
     key: 'power_hp',
-    label_ru: 'Мощность',
+    labelRu: 'Мощность',
     category: 'engine',
-    param_type: 'number',
+    paramType: 'number',
     unit: 'hp',
-    min_value: 10,
-    max_value: 1000,
+    minValue: 10,
+    maxValue: 1000,
     aliases: ['Мощность', 'мощность', 'power', 'Power'],
-    sql_expression: "main_parameters->>'power_hp'",
+    sqlExpression: "main_parameters->>'power_hp'",
     priority: 1,
+    enumValues: null,
   },
   {
     key: 'power_kw',
-    label_ru: 'Мощность (кВт)',
+    labelRu: 'Мощность (кВт)',
     category: 'engine',
-    param_type: 'number',
+    paramType: 'number',
     unit: 'kw',
-    min_value: 7,
-    max_value: 750,
+    minValue: 7,
+    maxValue: 750,
     aliases: ['Мощность кВт', 'power kw'],
-    sql_expression: "main_parameters->>'power_kw'",
+    sqlExpression: "main_parameters->>'power_kw'",
     priority: 2,
+    enumValues: null,
   },
   {
     key: 'weight_kg',
-    label_ru: 'Рабочий вес',
+    labelRu: 'Рабочий вес',
     category: 'physical',
-    param_type: 'number',
+    paramType: 'number',
     unit: 'kg',
-    min_value: 100,
-    max_value: 100000,
+    minValue: 100,
+    maxValue: 100000,
     aliases: ['Рабочий вес', 'вес', 'масса', 'weight', 'Масса'],
-    sql_expression: "main_parameters->>'weight_kg'",
+    sqlExpression: "main_parameters->>'weight_kg'",
     priority: 1,
+    enumValues: null,
   },
   {
     key: 'fuel_type',
-    label_ru: 'Тип питания',
+    labelRu: 'Тип питания',
     category: 'engine',
-    param_type: 'enum',
-    enum_values: {
+    paramType: 'enum',
+    enumValues: {
       diesel: 'Дизельный',
       electric: 'Электрический',
       hybrid: 'Гибридный',
     },
     aliases: ['Тип питания', 'топливо', 'fuel'],
-    sql_expression: "main_parameters->>'fuel_type'",
+    sqlExpression: "main_parameters->>'fuel_type'",
     priority: 1,
+    unit: null,
+    minValue: null,
+    maxValue: null,
   },
 ];
 
 class MockDictionaryService {
-  findCanonicalKey(rawKey: string): ParameterDictionary | null {
+  findCanonicalKey(rawKey: string): TestParameterDictionary | null {
     const normalizedKey = rawKey.toLowerCase().trim();
     
     for (const param of MOCK_DICTIONARY) {
@@ -72,7 +84,7 @@ class MockDictionaryService {
         return param;
       }
       
-      if (param.aliases.some(alias => 
+      if (param.aliases?.some(alias => 
         alias.toLowerCase() === normalizedKey ||
         normalizedKey.includes(alias.toLowerCase()) ||
         alias.toLowerCase().includes(normalizedKey)
@@ -168,17 +180,17 @@ function testNormalizationLogic() {
       continue;
     }
     
-    console.log(`   ✅ Найден: "${paramDef.key}" (${paramDef.label_ru})`);
-    console.log(`   Тип: ${paramDef.param_type}`);
+    console.log(`   ✅ Найден: "${paramDef.key}" (${paramDef.labelRu})`);
+    console.log(`   Тип: ${paramDef.paramType}`);
     if (paramDef.unit) console.log(`   Единица: ${paramDef.unit}`);
-    if (paramDef.enum_values) console.log(`   Enum значения:`, Object.keys(paramDef.enum_values));
+    if (paramDef.enumValues) console.log(`   Enum значения:`, Object.keys(paramDef.enumValues));
     console.log();
 
     // ШАГ 3: Нормализация значения
     console.log('🔸 Шаг 3: Нормализация значения');
     let normalizedValue: any = null;
 
-    if (paramDef.param_type === 'number') {
+    if (paramDef.paramType === 'number') {
       if (typeof value === 'number') {
         normalizedValue = value;
         console.log(`   Значение уже числовое: ${normalizedValue}`);
@@ -191,11 +203,11 @@ function testNormalizationLogic() {
           console.log(`   Целевая единица: ${paramDef.unit}`);
         }
       }
-    } else if (paramDef.param_type === 'enum') {
-      const mapped = enumMapper.mapEnumValue(String(value), paramDef);
+    } else if (paramDef.paramType === 'enum') {
+      const mapped = enumMapper.mapEnumValue(String(value), paramDef as ParameterDictionary);
       normalizedValue = mapped;
       console.log(`   Маппинг enum: "${value}" → "${mapped}"`);
-    } else if (paramDef.param_type === 'boolean') {
+    } else if (paramDef.paramType === 'boolean') {
       const str = String(value).toLowerCase();
       if (['true', '1', 'да', 'yes'].includes(str)) {
         normalizedValue = true;
@@ -293,10 +305,10 @@ function testNormalizationLogic() {
     if (!paramDef) continue;
 
     let normalizedValue: any = null;
-    if (paramDef.param_type === 'number') {
+    if (paramDef.paramType === 'number') {
       normalizedValue = unitParser.parseValue(value, paramDef.unit || '');
-    } else if (paramDef.param_type === 'enum') {
-      normalizedValue = enumMapper.mapEnumValue(String(value), paramDef);
+    } else if (paramDef.paramType === 'enum') {
+      normalizedValue = enumMapper.mapEnumValue(String(value), paramDef as ParameterDictionary);
     }
 
     if (normalizedValue !== null) {

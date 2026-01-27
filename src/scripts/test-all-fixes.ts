@@ -63,6 +63,8 @@ async function runTests() {
   // @ts-ignore - доступ к приватному методу для теста
   const validateEmbedding = repo['validateEmbedding'].bind(repo);
 
+  // Для юнит-теста берем "базовую" размерность 768,
+  // чтобы тест не зависел от конкретного провайдера.
   const validEmbedding = new Array(768).fill(0.5);
   const invalidEmbeddings: Array<{ emb: unknown; desc: string }> = [
     { emb: new Array(100).fill(0.5), desc: "Неправильная размерность (100)" },

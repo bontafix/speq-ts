@@ -16,6 +16,9 @@ import { SearchEngine } from '../search/search.engine';
 import { ParameterDictionaryService } from '../normalization/parameter-dictionary.service';
 import { QueryParameterNormalizer } from '../normalization/query-parameter-normalizer';
 import { SearchQuery } from '../catalog';
+import type { Pool } from 'pg';
+
+let pgPool: Pool;
 
 async function testSearchWithDebug() {
   console.log('='.repeat(80));
@@ -31,7 +34,9 @@ async function testSearchWithDebug() {
   console.log();
 
   try {
-    const { pgPool, checkDatabaseHealth } = await import('../db/pg');
+    const module = await import('../db/pg');
+    pgPool = module.pgPool;
+    const { checkDatabaseHealth } = module;
     
     const health = await checkDatabaseHealth();
     

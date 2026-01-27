@@ -2,15 +2,17 @@ import "./env-loader";
 
 export class ConfigService {
   get llm() {
-    // В проекте чат-провайдер фиксирован: используем только Groq API.
-    // Поэтому дефолтная chat-модель тоже должна быть Groq-совместимой.
+    // Дефолтный чат-провайдер — Groq (чтобы ничего не ломать).
+    // При необходимости можно переопределить через LLM_CHAT_PROVIDER.
     const defaultGroqChatModel = "llama-3.3-70b-versatile";
+    const chatProvider = (process.env.LLM_CHAT_PROVIDER || "groq").trim();
+
     return {
       model: process.env.LLM_MODEL ?? defaultGroqChatModel,
       embeddingModel: process.env.EMBED_MODEL ?? "nomic-embed-text",
-      // В проекте чат-провайдер фиксирован: используем только Groq API.
-      // Любые попытки переключить chat provider через ENV блокируются в validate().
-      chatProvider: "groq",
+      // Разрешаем переключать chat-провайдер через ENV.
+      // Поддерживаются: "groq", "openai", "ollama".
+      chatProvider,
       embeddingsProvider: process.env.LLM_EMBEDDINGS_PROVIDER ?? "ollama",
       baseUrl: process.env.LLM_BASE_URL,
       apiKey: process.env.LLM_API_KEY,
@@ -31,15 +33,16 @@ export class ConfigService {
   validate(): void {
     const { apiKey } = this.llm;
 
-    // Важно: чат-провайдер должен быть только Groq.
-    // Если кто-то выставил LLM_CHAT_PROVIDER, то не даём тихо уйти на Ollama/OpenAI.
     const envChatProviderRaw = process.env.LLM_CHAT_PROVIDER?.trim();
-    if (envChatProviderRaw && envChatProviderRaw !== "groq") {
-      // Не падаем, чтобы не ломать запуск при старых конфигурациях.
-      // Но явно предупреждаем: переменная будет проигнорирована.
-      console.warn(
-        `⚠️  LLM_CHAT_PROVIDER="${envChatProviderRaw}" будет проигнорирован. В этом проекте для чата используется только Groq API.`,
-      );
+    if (envChatProviderRaw) {
+      const allowed = ["groq", "openai", "ollama"];
+      if (!allowed.includes(envChatProviderRaw)) {
+        console.warn(
+          `⚠️  LLM_CHAT_PROVIDER="${envChatProviderRaw}" не поддерживается. Разрешены значения: ${allowed.join(
+            ", ",
+          )}. Будет использован провайдер по умолчанию (groq).`,
+        );
+      }
     }
     
     // Частая ошибка: оставить LLM_MODEL от Ollama (в формате "model:tag"),

@@ -5,8 +5,6 @@ import { ParameterDictionaryService } from "../normalization/parameter-dictionar
 /**
  * EquipmentRepository — слой доступа к данным.
  * Здесь сконцентрированы SQL, FTS и pgvector.
- *
- * ... (комментарии сохранены)
  */
 export interface EquipmentForEmbedding {
   id: string;
@@ -21,21 +19,28 @@ export class EquipmentRepository {
   }
 
   /**
+   * Конфигурация "активного" embedding в зависимости от провайдера.
+   * Для Ollama используем колонку embedding (VECTOR(768)),
+   * для OpenAI — embedding_openai (VECTOR(1536)).
+   */
+  private getActiveEmbeddingConfig(): { column: "embedding" | "embedding_openai"; dim: number } {
+    const provider = process.env.LLM_EMBEDDINGS_PROVIDER?.trim();
+    if (provider === "openai") {
+      return { column: "embedding_openai", dim: 1536 };
+    }
+    // По умолчанию считаем, что используем Ollama/LOCAL с 768-мерными векторами.
+    return { column: "embedding", dim: 768 };
+  }
+
+  /**
    * Валидация имени параметра для безопасного использования в SQL.
-   * Разрешаем только буквы (латиница + кириллица), цифры и подчеркивания.
    */
   private validateParameterKey(key: string): boolean {
-    // Защита от SQL инъекций через имена параметров
     return /^[a-zA-Zа-яА-ЯёЁ0-9_]+$/.test(key) && key.length > 0 && key.length < 100;
   }
 
   /**
    * Построение SQL условия для параметра.
-   * 
-   * ВАЖНО: Параметры УЖЕ нормализованы в SearchEngine через QueryParameterNormalizer.
-   * Этот метод только определяет оператор и тип cast на основе суффикса.
-   * 
-   * @returns { paramKey, value, operator, sqlCast }
    */
   private buildParameterCondition(
     key: string,
@@ -46,37 +51,30 @@ export class EquipmentRepository {
     operator: '=' | '>=' | '<=';
     sqlCast: string;
   } | null {
-    // Параметры УЖЕ в canonical формате (например, "engine_power_kw_min")
-    // Просто определяем оператор и cast
-    
     let operator: '=' | '>=' | '<=' = '=';
     let sqlCast = typeof value === 'number' ? '::numeric' : '::text';
     let paramKey = key;
 
-    // Определяем оператор из суффикса
     if (key.endsWith('_min')) {
       operator = '>=';
       sqlCast = '::numeric';
-      paramKey = key.slice(0, -4); // Убираем суффикс _min
+      paramKey = key.slice(0, -4);
     } else if (key.endsWith('_max')) {
       operator = '<=';
       sqlCast = '::numeric';
-      paramKey = key.slice(0, -4); // Убираем суффикс _max
+      paramKey = key.slice(0, -4);
     }
 
-    // Валидация ключа (защита от SQL инъекций)
     if (!this.validateParameterKey(paramKey)) {
       console.warn(`[Security] Invalid parameter key: ${paramKey}`);
       return null;
     }
 
-    // Пытаемся получить SQL expression из словаря (если доступен)
     if (this.dictionaryService) {
       try {
         const paramDef = this.dictionaryService.findCanonicalKey(paramKey);
-        if (paramDef && paramDef.sql_expression) {
-          // Извлекаем имя поля из sql_expression
-          const fieldName = paramDef.sql_expression.match(/['"]([^'"]+)['"]/)?.[1];
+        if (paramDef && paramDef.sqlExpression) {
+          const fieldName = paramDef.sqlExpression.match(/['"]([^'"]+)['"]/)?.[1];
           if (fieldName) {
             paramKey = fieldName;
           }
@@ -101,7 +99,6 @@ export class EquipmentRepository {
     const whereParts: string[] = ["e.is_active = true"];
     let rankExpression = "0::float4";
 
-    // Текстовый поиск через tsvector-колонку search_vector
     if (query.text && query.text.trim()) {
       values.push(query.text.trim());
       const placeholder = `$${values.length}`;
@@ -110,9 +107,6 @@ export class EquipmentRepository {
     }
 
     if (query.category && query.category.trim()) {
-      // Раньше было строгое равенство, но LLM часто возвращает "Кран",
-      // тогда как в БД категория может быть "Краны"/"Автокраны"/"Гусеничные краны".
-      // Делаем мягкий матч по подстроке (case-insensitive).
       values.push(`%${query.category.trim()}%`);
       whereParts.push(`e.category ILIKE $${values.length}`);
     }
@@ -125,22 +119,17 @@ export class EquipmentRepository {
       whereParts.push(`e.region = $${values.length}`);
     }
 
-    // Обработка параметров из main_parameters (JSONB)
     if (query.parameters && Object.keys(query.parameters).length > 0) {
       for (const [key, value] of Object.entries(query.parameters)) {
-        // Параметры УЖЕ нормализованы в SearchEngine
-        // Просто строим SQL условие
         const condition = this.buildParameterCondition(key, value);
         if (!condition) continue;
         
         const { paramKey, value: conditionValue, operator, sqlCast } = condition;
         
-        // Добавляем условие в WHERE с параметризацией
-      values.push(paramKey, conditionValue);
+        values.push(paramKey, conditionValue);
         const keyIndex = values.length - 1;
         const valueIndex = values.length;
         
-      // Используем normalized_parameters для быстрого поиска по canonical параметрам
         whereParts.push(
         `(e.normalized_parameters->>$${keyIndex})${sqlCast} ${operator} $${valueIndex}`
         );
@@ -149,7 +138,6 @@ export class EquipmentRepository {
 
     const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
-    // Безопасное использование limit и offset через параметры
     const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
     const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
 
@@ -181,13 +169,11 @@ export class EquipmentRepository {
 
   /**
    * Подсчет общего количества записей, соответствующих запросу.
-   * Использует те же WHERE условия, что и fullTextSearch.
    */
   async countEquipment(query: SearchQuery): Promise<number> {
     const values: any[] = [];
     const whereParts: string[] = ["e.is_active = true"];
 
-    // Текстовый поиск через tsvector-колонку search_vector
     if (query.text && query.text.trim()) {
       values.push(query.text.trim());
       const placeholder = `$${values.length}`;
@@ -207,7 +193,6 @@ export class EquipmentRepository {
       whereParts.push(`e.region = $${values.length}`);
     }
 
-    // Обработка параметров из main_parameters (JSONB)
     if (query.parameters && Object.keys(query.parameters).length > 0) {
       for (const [key, value] of Object.entries(query.parameters)) {
         const condition = this.buildParameterCondition(key, value);
@@ -240,22 +225,13 @@ export class EquipmentRepository {
 
   /**
    * Vector search (pgvector) по эмбеддингу запроса.
-   * 
-   * ВАЖНО: Этот метод требует передачи LLM провайдера для генерации embedding запроса.
-   * Если провайдер не передан, используется упрощённая SQL-функция equipment_vector_search.
-   * 
-   * Для правильной работы рекомендуется использовать метод с провайдером:
-   * vectorSearchWithProvider(query, limit, llmProvider)
    */
   async vectorSearch(query: SearchQuery, limit: number): Promise<EquipmentSummary[]> {
     if (!query.text || !query.text.trim()) {
       return [];
     }
 
-    // Безопасное использование limit
     const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
-
-    // Пытаемся использовать SQL-функцию (упрощённая версия)
     const values: any[] = [query.text.trim(), safeLimit];
 
     const sql = `
@@ -273,9 +249,6 @@ export class EquipmentRepository {
       const result = await this.pool.query(sql, values);
       return result.rows;
     } catch (err: any) {
-      // Если vector search не работает (например, нет функции) — не роняем поиск,
-      // а просто возвращаем пустой набор и остаёмся только на FTS.
-      // eslint-disable-next-line no-console
       console.warn(
         `Ошибка vector search (equipment_vector_search): ${String(
           err,
@@ -285,42 +258,21 @@ export class EquipmentRepository {
     }
   }
 
-  /**
-   * Валидация embedding вектора перед использованием в SQL.
-   * Проверяет, что это массив чисел правильной размерности.
-   */
-  private validateEmbedding(embedding: number[], expectedDim: number = 768): boolean {
-    // Проверяем, что это массив
-    if (!Array.isArray(embedding)) {
-      return false;
-    }
-    
-    // Проверяем размерность
+  private validateEmbedding(embedding: number[], expectedDim: number): boolean {
+    if (!Array.isArray(embedding)) return false;
     if (embedding.length !== expectedDim) {
       console.warn(`[Security] Invalid embedding dimension: expected ${expectedDim}, got ${embedding.length}`);
       return false;
     }
-    
-    // Проверяем, что все элементы - валидные числа
     for (let i = 0; i < embedding.length; i++) {
       if (typeof embedding[i] !== 'number' || !Number.isFinite(embedding[i])) {
         console.warn(`[Security] Invalid embedding value at index ${i}: ${embedding[i]}`);
         return false;
       }
     }
-    
     return true;
   }
 
-  /**
-   * Vector search с генерацией embedding запроса через LLM.
-   * Это правильный способ использования векторного поиска.
-   * 
-   * @param queryText - текст запроса
-   * @param queryEmbedding - вектор embedding
-   * @param limit - количество результатов
-   * @param filters - дополнительные фильтры (category, brand, region, parameters)
-   */
   async vectorSearchWithEmbedding(
     queryText: string,
     queryEmbedding: number[],
@@ -333,17 +285,16 @@ export class EquipmentRepository {
     },
     offset: number = 0
   ): Promise<EquipmentSummary[]> {
-    // Валидация embedding для защиты от инъекций и некорректных данных
-    if (!this.validateEmbedding(queryEmbedding, 768)) {
+    const { column, dim } = this.getActiveEmbeddingConfig();
+
+    if (!this.validateEmbedding(queryEmbedding, dim)) {
       console.error('[Security] Invalid embedding provided, aborting vector search');
       return [];
     }
     
     const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
-    
-    // Формируем дополнительные WHERE условия
     const whereParts: string[] = [
-      "e.embedding IS NOT NULL",
+      `e.${column} IS NOT NULL`,
       "e.is_active = true"
     ];
     const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
@@ -351,8 +302,6 @@ export class EquipmentRepository {
     const params: any[] = [embeddingLiteral, safeLimit, safeOffset];
     
     if (filters?.category && filters.category.trim()) {
-      // Как и в FTS: делаем мягкий матч по подстроке (LLM часто дает "Бульдозер",
-      // а в БД может быть "Бульдозеры"/"Колесные бульдозеры" и т.п.)
       params.push(`%${filters.category.trim()}%`);
       whereParts.push(`e.category ILIKE $${params.length}`);
     }
@@ -367,17 +316,14 @@ export class EquipmentRepository {
       whereParts.push(`e.region = $${params.length}`);
     }
     
-    // Обработка параметров (JSONB)
     if (filters?.parameters && Object.keys(filters.parameters).length > 0) {
       for (const [key, value] of Object.entries(filters.parameters)) {
-        // Параметры УЖЕ нормализованы в SearchEngine
         const condition = this.buildParameterCondition(key, value);
         if (!condition) continue;
         
         const { paramKey, value: conditionValue, operator, sqlCast } = condition;
         
         params.push(paramKey, conditionValue);
-        // Используем normalized_parameters для быстрого поиска по canonical параметрам
         whereParts.push(
           `(e.normalized_parameters->>$${params.length - 1})${sqlCast} ${operator} $${params.length}`
         );
@@ -392,11 +338,11 @@ export class EquipmentRepository {
         e.brand,
         e.price,
         e.main_parameters AS "mainParameters",
-        1 - (e.embedding <=> $1::vector) AS similarity
+        1 - (e.${column} <=> $1::vector) AS similarity
       FROM equipment e
       INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
       WHERE ${whereParts.join(" AND ")}
-      ORDER BY e.embedding <=> $1::vector
+      ORDER BY e.${column} <=> $1::vector
       LIMIT $2 OFFSET $3
     `;
 
@@ -411,17 +357,14 @@ export class EquipmentRepository {
       const result = await this.pool.query(sql, params);
       return result.rows;
     } catch (err: any) {
-      // eslint-disable-next-line no-console
       console.warn(`Ошибка vector search с embedding: ${String(err)}`);
       return [];
     }
   }
 
-  /**
-   * Найти объекты каталога без эмбеддинга для offline-обработки.
-   * Текст для эмбеддинга формируется из основных полей (name, category, brand и т.п.).
-   */
   async findWithoutEmbedding(limit: number): Promise<EquipmentForEmbedding[]> {
+    const { column } = this.getActiveEmbeddingConfig();
+
     const sql = `
       SELECT
         e.id::text AS id,
@@ -431,12 +374,13 @@ export class EquipmentRepository {
             e.name,
             e.category,
             e.brand,
-            e.region
+            e.region,
+            e.description
           )
         ) AS "textToEmbed"
       FROM equipment e
       INNER JOIN brands b ON e.brand = b.name AND b.is_active = true
-      WHERE e.embedding IS NULL
+      WHERE e.${column} IS NULL
         AND e.is_active = true
       ORDER BY e.id
       LIMIT $1
@@ -446,23 +390,19 @@ export class EquipmentRepository {
     return result.rows as EquipmentForEmbedding[];
   }
 
-  /**
-   * Сохранить эмбеддинг для конкретной записи.
-   * Ожидается, что размер эмбеддинга совпадает с размером vector(N) в БД.
-   */
   async updateEmbedding(id: string, embedding: number[]): Promise<void> {
-    // Валидация embedding для защиты от инъекций и некорректных данных
-    if (!this.validateEmbedding(embedding, 768)) {
-      throw new Error(`Invalid embedding for id ${id}: must be array of 768 valid numbers`);
+    const { column, dim } = this.getActiveEmbeddingConfig();
+
+    if (!this.validateEmbedding(embedding, dim)) {
+      throw new Error(`Invalid embedding for id ${id}: must be array of ${dim} valid numbers`);
     }
     
     const literal = `[${embedding.join(",")}]`;
-    // Поддержка как integer id (serial4), так и text id
     const idParam = /^\d+$/.test(id) ? parseInt(id, 10) : id;
     await this.pool.query(
       `
         UPDATE equipment
-        SET embedding = $2::vector
+        SET ${column} = $2::vector
         WHERE id = $1
       `,
       [idParam, literal],

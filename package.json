@@ -25,6 +25,8 @@
     "pm2:logs": "pm2 logs",
     "pm2:delete": "pm2 delete all",
     "embed:equipment": "ts-node src/worker/embed-equipment.ts",
+    "reset:embeddings": "ts-node src/scripts/reset-embeddings.ts",
+    "test:embeddings": "ts-node src/scripts/test-embedding-quality.ts",
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
     "generate:dictionary": "ts-node src/scripts/generate-dictionary.ts",
     "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",

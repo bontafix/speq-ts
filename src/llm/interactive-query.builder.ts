@@ -27,10 +27,27 @@ function extractJsonObject(text: string): string | null {
 function parseStepJson(raw: string): InteractiveQueryStep {
   const jsonStr = extractJsonObject(raw);
   if (!jsonStr) {
-    throw new Error("LLM не вернул JSON (ожидался объект с action=ask|final)");
+    // Fallback: LLM ответил не-JSON (например, обычным текстом).
+    // Считаем это уточняющим вопросом к пользователю.
+    const fallbackQuestion = raw.trim() || "Я не смог разобрать ответ модели. Уточните, какую технику вы ищете и по каким параметрам.";
+    if (process.env.DEBUG_SEARCH) {
+      // eslint-disable-next-line no-console
+      console.warn("[LLM] Raw response without JSON, fallback to ask:", fallbackQuestion);
+    }
+    return { action: "ask", question: fallbackQuestion };
   }
 
-  const parsed = JSON.parse(jsonStr) as any;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr) as any;
+  } catch (e: any) {
+    const fallbackQuestion = raw.trim() || "Ответ модели оказался некорректным JSON. Уточните, какую технику вы ищете и по каким параметрам.";
+    if (process.env.DEBUG_SEARCH) {
+      // eslint-disable-next-line no-console
+      console.warn("[LLM] Failed to parse JSON response, fallback to ask:", e?.message ?? String(e));
+    }
+    return { action: "ask", question: fallbackQuestion };
+  }
   const action = parsed?.action;
 
   // Если LLM пытается ответить простым текстом без action (иногда бывает при сбоях)
@@ -47,11 +64,22 @@ function parseStepJson(raw: string): InteractiveQueryStep {
   if (action === "final") {
     const query = parsed?.query;
     if (!query || typeof query !== "object") {
-       // Если LLM ошибся и вернул final без query, считаем это "ask" с просьбой уточнить
-       if (parsed.message || parsed.text) {
-           return { action: "ask", question: parsed.message || parsed.text };
+       // Если LLM ошибся и вернул final без корректного query,
+       // превращаем это в уточняющий вопрос вместо падения.
+       const fallbackQuestion =
+         (typeof parsed.message === "string" && parsed.message.trim()) ||
+         (typeof parsed.text === "string" && parsed.text.trim()) ||
+         "Я не смог корректно понять параметры поиска. Уточните, какую технику вы ищете и по каким характеристикам.";
+
+       if (process.env.DEBUG_SEARCH) {
+         // eslint-disable-next-line no-console
+         console.warn(
+           "[LLM] Received action=final without valid query, fallback to ask. Raw:",
+           JSON.stringify(parsed).substring(0, 300),
+         );
        }
-       throw new Error("LLM вернул action=final, но query отсутствует или не объект");
+
+       return { action: "ask", question: fallbackQuestion };
     }
     
     // Валидируем и нормализуем SearchQuery от LLM

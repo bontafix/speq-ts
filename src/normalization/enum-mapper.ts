@@ -8,18 +8,20 @@ export class EnumMapper {
    * Преобразует исходное enum значение в canonical
    */
   mapEnumValue(rawValue: string, paramDef: ParameterDictionary): string | null {
-    if (paramDef.param_type !== "enum") return null;
-    if (!paramDef.enum_values) return null;
+    if (paramDef.paramType !== "enum") return null;
+    if (!paramDef.enumValues) return null;
 
     const normalized = rawValue.toLowerCase().trim();
 
     // Прямое совпадение
-    if (paramDef.enum_values[normalized]) {
+    if (paramDef.enumValues[normalized]) {
       return normalized;
     }
 
-    // Поиск по значениям в enum_values
-    for (const [canonical, label] of Object.entries(paramDef.enum_values)) {
+    // Поиск по значениям в enumValues
+    for (const [canonical, label] of Object.entries(paramDef.enumValues)) {
+      if (typeof label !== 'string') continue;
+      
       const normalizedLabel = label.toLowerCase();
       if (
         normalizedLabel === normalized ||
@@ -33,4 +35,3 @@ export class EnumMapper {
     return null;
   }
 }
-

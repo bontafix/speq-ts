@@ -211,7 +211,8 @@ async function testNormalizationIntegration() {
     // Показываем некоторые параметры
     const sample = dict.slice(0, 3);
     sample.forEach(p => {
-      console.log(`   - ${p.key}: ${p.aliases.length} алиасов`);
+      const aliasCount = p.aliases?.length ?? 0;
+      console.log(`   - ${p.key}: ${aliasCount} алиасов`);
     });
     
     dictionaryLoaded = true;
