@@ -6,7 +6,7 @@ import { AppError } from '../../core/errors/app-error';
 export function parseId(id: string, entityName: string): number {
   const parsed = parseInt(id, 10);
   if (isNaN(parsed) || parsed <= 0) {
-    throw new AppError(`Invalid ${entityName} ID: ${id}`, 400);
+    throw new AppError(400, `Invalid ${entityName} ID: ${id}`);
   }
   return parsed;
 }
@@ -26,7 +26,7 @@ export function validatePositiveNumber(
   const num = typeof value === 'string' ? parseInt(value, 10) : value;
   
   if (isNaN(num) || num <= 0) {
-    throw new AppError(`${fieldName} must be a positive number`, 400);
+    throw new AppError(400, `${fieldName} must be a positive number`);
   }
   
   return num;

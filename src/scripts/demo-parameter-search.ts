@@ -9,6 +9,7 @@
  * 4. Результаты
  */
 
+import { pgPool } from '../db/pg';
 import { EquipmentRepository } from '../repository/equipment.repository';
 import { SearchEngine } from '../search/search.engine';
 import { ParameterDictionaryService } from '../normalization/parameter-dictionary.service';
@@ -33,7 +34,7 @@ async function demoParameterSearch() {
     console.log('⚠️  Словарь не загружен, но поиск будет работать с fallback маппером');
   }
   
-  const repository = new EquipmentRepository(dictionaryService);
+  const repository = new EquipmentRepository(pgPool, dictionaryService);
   const searchEngine = new SearchEngine(repository, dictionaryService);
   const normalizer = new QueryParameterNormalizer(dictionaryService);
   console.log();

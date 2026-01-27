@@ -72,7 +72,7 @@ async function testSearchWithDebug() {
   }
   console.log();
 
-  const repository = new EquipmentRepository(dictionaryService);
+  const repository = new EquipmentRepository(pgPool, dictionaryService);
   const searchEngine = new SearchEngine(repository, dictionaryService);
   const normalizer = new QueryParameterNormalizer(dictionaryService);
 

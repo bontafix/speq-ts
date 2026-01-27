@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import "../config/env-loader";
+import { pgPool } from "../db/pg";
 import { EquipmentRepository } from "../repository/equipment.repository";
 import { LLMProviderFactory } from "../llm";
 import { ConfigService } from "../config/config";
@@ -24,7 +25,7 @@ const EMBED_MODEL = configService.llm.embeddingModel;
 const BATCH_SIZE = process.env.EMBED_BATCH_SIZE ? Number(process.env.EMBED_BATCH_SIZE) : 10;
 
 async function main() {
-  const repo = new EquipmentRepository();
+  const repo = new EquipmentRepository(pgPool);
   const llmFactory = new LLMProviderFactory();
 
   console.log(

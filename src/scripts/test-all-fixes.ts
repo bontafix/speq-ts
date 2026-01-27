@@ -33,7 +33,7 @@ async function runTests() {
   console.log("\n1️⃣  Тест: Валидация имен параметров (SQL Injection)");
   console.log("-".repeat(70));
 
-  const repo = new EquipmentRepository();
+  const repo = new EquipmentRepository(pgPool);
   // @ts-ignore - доступ к приватному методу для теста
   const validateKey = repo['validateParameterKey'].bind(repo);
 

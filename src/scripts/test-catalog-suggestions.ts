@@ -3,6 +3,7 @@
  * Демонстрация работы подсказок каталога
  */
 
+import { pgPool } from '../db/pg';
 import { EquipmentRepository } from '../repository/equipment.repository';
 import { SearchEngine } from '../search/search.engine';
 import { CatalogIndexService } from '../catalog/catalog-index.service';
@@ -15,7 +16,7 @@ async function testSuggestions() {
   console.log();
 
   // Инициализация
-  const repository = new EquipmentRepository();
+  const repository = new EquipmentRepository(pgPool);
   const searchEngine = new SearchEngine(repository);
   const catalogIndex = searchEngine.getCatalogIndex();
 

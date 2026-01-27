@@ -221,7 +221,7 @@ async function testNormalizationIntegration() {
   }
 
   // Создаем repository
-  const repository = new EquipmentRepository(dictionaryService);
+  const repository = new EquipmentRepository(pgPool, dictionaryService);
 
   console.log("\n" + "=".repeat(70));
   console.log("📝 ЗАПУСК ТЕСТОВ");

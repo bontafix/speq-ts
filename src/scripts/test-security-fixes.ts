@@ -13,7 +13,7 @@ async function runTests() {
 console.log("🧪 Тест исправлений безопасности\n");
 console.log("=" .repeat(60));
 
-const repo = new EquipmentRepository();
+const repo = new EquipmentRepository(pgPool);
 
 // Тест 1: Валидация paramKey (защита от SQL инъекций)
 console.log("\n1️⃣  Тест: Валидация имен параметров");

@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { checkDatabaseHealth } from "../../core/database/health";
+import { checkDatabaseHealth } from "../../../db/pg";
 
 /**
  * Плагин модуля Health Check
@@ -40,7 +40,7 @@ export const healthPlugin: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const dbHealth = await checkDatabaseHealth(fastify.db);
+      const dbHealth = await checkDatabaseHealth();
       return reply.send({
         status: "ok",
         database: dbHealth,

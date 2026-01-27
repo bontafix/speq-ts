@@ -29,15 +29,9 @@ export const databasePlugin = fp(async function databasePlugin(fastify: FastifyI
         if (issue.level === 'error') fastify.log.error(`- ${issue.message}`);
         else fastify.log.warn(`- ${issue.message}`);
       });
-      
-      // Если есть критические ошибки, можно остановить старт сервера
-      // if (health.issues.some(i => i.level === 'error')) {
-      //   throw new Error('Database health check failed');
-      // }
     }
   } catch (error) {
-    fastify.log.error('❌ Failed to check database health:', error);
-    // Не падаем, чтобы сервер мог запуститься и показать ошибку 500
+    fastify.log.error({ err: error }, '❌ Failed to check database health');
   }
   
   // Graceful shutdown

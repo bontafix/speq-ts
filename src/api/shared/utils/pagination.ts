@@ -29,7 +29,7 @@ export function calculatePagination(
 }
 
 /**
- * Формирует ответ с пагинацией
+ * Формирует ответ с пагинацией (плоская структура)
  */
 export function createPaginatedResponse<T>(
   items: T[],
@@ -38,11 +38,9 @@ export function createPaginatedResponse<T>(
 ) {
   return {
     items,
-    pagination: {
-      page: pagination.page,
-      limit: pagination.limit,
-      total,
-      totalPages: Math.ceil(total / pagination.limit),
-    },
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages: Math.ceil(total / pagination.limit) || 1,
   };
 }
