@@ -1,20 +1,11 @@
 import { pgPool } from "../db/pg";
+import { 
+  ParameterDictionary, 
+  ParameterDictionaryRow, 
+  rowToParameterDictionary 
+} from "../shared/types/parameter-dictionary";
 
-export interface ParameterDictionary {
-  key: string;
-  label_ru: string;
-  description_ru?: string;
-  category: string;
-  // string нужен для грузовых текстовых характеристик (шины/кабина/мосты и т.п.)
-  param_type: "number" | "enum" | "boolean" | "string";
-  unit?: string;
-  min_value?: number;
-  max_value?: number;
-  enum_values?: Record<string, string>;
-  aliases: string[];
-  sql_expression: string;
-  priority: number;
-}
+export type { ParameterDictionary };
 
 /**
  * Сервис для работы со справочником параметров
@@ -22,6 +13,10 @@ export interface ParameterDictionary {
 export class ParameterDictionaryService {
   private dictionary: ParameterDictionary[] = [];
   private dictionaryLoaded = false;
+  
+  // Indexes for O(1) lookup
+  private keyIndex: Map<string, ParameterDictionary> = new Map();
+  private aliasIndex: Map<string, ParameterDictionary> = new Map();
 
   /**
    * Загружает справочник из БД
@@ -49,26 +44,24 @@ export class ParameterDictionaryService {
       ORDER BY priority, key
     `;
 
-    const result = await pgPool.query(sql);
-    this.dictionary = result.rows.map((row) => {
-      const entry: ParameterDictionary = {
-        key: row.key,
-        label_ru: row.label_ru,
-        category: row.category,
-        param_type: row.param_type,
-        aliases: row.aliases || [],
-        sql_expression: row.sql_expression,
-        priority: row.priority,
-      };
+    const result = await pgPool.query<ParameterDictionaryRow>(sql);
+    this.dictionary = result.rows.map(rowToParameterDictionary);
 
-      if (row.description_ru) entry.description_ru = row.description_ru;
-      if (row.unit) entry.unit = row.unit;
-      if (row.min_value != null) entry.min_value = Number(row.min_value);
-      if (row.max_value != null) entry.max_value = Number(row.max_value);
-      if (row.enum_values) entry.enum_values = row.enum_values;
-
-      return entry;
-    });
+    // Build indexes
+    this.keyIndex.clear();
+    this.aliasIndex.clear();
+    
+    for (const param of this.dictionary) {
+      const key = param.key.toLowerCase();
+      this.keyIndex.set(key, param);
+      
+      if (param.aliases) {
+        for (const alias of param.aliases) {
+          // Алиасы тоже индексируем в нижнем регистре
+          this.aliasIndex.set(alias.toLowerCase(), param);
+        }
+      }
+    }
 
     this.dictionaryLoaded = true;
   }
@@ -96,8 +89,8 @@ export class ParameterDictionaryService {
     // Возвращаем параметры с высоким приоритетом (0-29 для основных фильтров)
     // Сортируем по приоритету (asc)
     return this.dictionary
-      .filter((p) => p.priority < 50) // Отсекаем детали и мусор
-      .sort((a, b) => a.priority - b.priority)
+      .filter((p) => (p.priority ?? 100) < 50) // Отсекаем детали и мусор
+      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
       .slice(0, limit);
   }
 
@@ -114,31 +107,25 @@ export class ParameterDictionaryService {
 
     const normalizedKey = rawKey.toLowerCase().trim();
 
-    // Сначала ищем точные совпадения (приоритет выше)
-    for (const param of this.dictionary) {
-      // Проверяем точное совпадение ключа
-      if (param.key.toLowerCase() === normalizedKey) {
-        return param;
-      }
-
-      // Проверяем точное совпадение алиаса
-      if (
-        param.aliases.some(
-          (alias) => alias.toLowerCase() === normalizedKey
-        )
-      ) {
-        return param;
-      }
+    // 1. Сначала ищем точные совпадения в индексах (O(1))
+    // Проверяем точное совпадение ключа
+    if (this.keyIndex.has(normalizedKey)) {
+      return this.keyIndex.get(normalizedKey)!;
     }
 
-    // Затем ищем частичные совпадения (только если нет точных)
+    // Проверяем точное совпадение алиаса
+    if (this.aliasIndex.has(normalizedKey)) {
+      return this.aliasIndex.get(normalizedKey)!;
+    }
+
+    // 2. Затем ищем частичные совпадения (только если нет точных) - O(N)
     // Используем приоритет параметра для выбора лучшего совпадения
     let bestMatch: ParameterDictionary | null = null;
     let bestPriority = Infinity;
 
     for (const param of this.dictionary) {
       // Проверяем частичные совпадения алиасов
-      const hasPartialMatch = param.aliases.some(
+      const hasPartialMatch = param.aliases?.some(
         (alias) => {
           const aliasLower = alias.toLowerCase();
           // Частичное совпадение: исходный ключ содержит алиас или алиас содержит исходный ключ
@@ -148,9 +135,10 @@ export class ParameterDictionaryService {
 
       if (hasPartialMatch) {
         // Выбираем параметр с наименьшим приоритетом (0 = самый важный)
-        if (param.priority < bestPriority) {
+        const priority = param.priority ?? 100;
+        if (priority < bestPriority) {
           bestMatch = param;
-          bestPriority = param.priority;
+          bestPriority = priority;
         }
       }
     }
@@ -166,7 +154,7 @@ export class ParameterDictionaryService {
       throw new Error("Справочник не загружен. Вызовите loadDictionary() сначала.");
     }
 
-    return this.dictionary.find((p) => p.key === key) || null;
+    // Используем индекс для быстрого поиска
+    return this.keyIndex.get(key.toLowerCase()) || null;
   }
 }
-

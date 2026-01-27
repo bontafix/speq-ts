@@ -1,31 +1,13 @@
 import { FastifyInstance } from "fastify";
 import { NotFoundError, ValidationError } from "../../core/errors/app-error";
-import { formatTimestamps } from "../../shared/utils/date";
 import { UpdateQueryBuilder } from "../../shared/utils/query-builder";
+import { 
+  ParameterDictionary, 
+  ParameterDictionaryRow, 
+  rowToParameterDictionary 
+} from "../../../shared/types/parameter-dictionary";
 
-/**
- * Интерфейс параметра словаря для API
- */
-export interface ParameterDictionary {
-  key: string;
-  labelRu: string;
-  labelEn: string | null;
-  descriptionRu: string | null;
-  category: string;
-  paramType: string;
-  unit: string | null;
-  minValue: number | null;
-  maxValue: number | null;
-  enumValues: string[] | null;
-  aliases: string[] | null;
-  sqlExpression: string;
-  isSearchable: boolean | null;
-  isFilterable: boolean | null;
-  priority: number | null;
-  version: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-}
+export type { ParameterDictionary };
 
 /**
  * Интерфейс данных создания параметра словаря
@@ -40,7 +22,7 @@ export interface CreateParameterDictionaryData {
   unit?: string | null;
   minValue?: number | null;
   maxValue?: number | null;
-  enumValues?: string[] | null;
+  enumValues?: Record<string, string> | null;
   aliases?: string[] | null;
   sqlExpression: string;
   isSearchable?: boolean;
@@ -61,7 +43,7 @@ export interface UpdateParameterDictionaryData {
   unit?: string | null;
   minValue?: number | null;
   maxValue?: number | null;
-  enumValues?: string[] | null;
+  enumValues?: Record<string, string> | null;
   aliases?: string[] | null;
   sqlExpression?: string;
   isSearchable?: boolean;
@@ -80,26 +62,7 @@ export class ParameterDictionaryService {
    * Получить все параметры словаря
    */
   async getAll(): Promise<ParameterDictionary[]> {
-    const result = await this.fastify.db.query<{
-      key: string;
-      label_ru: string;
-      label_en: string | null;
-      description_ru: string | null;
-      category: string;
-      param_type: string;
-      unit: string | null;
-      min_value: number | null;
-      max_value: number | null;
-      enum_values: any;
-      aliases: any;
-      sql_expression: string;
-      is_searchable: boolean | null;
-      is_filterable: boolean | null;
-      priority: number | null;
-      version: string | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
+    const result = await this.fastify.db.query<ParameterDictionaryRow>(
       `
         SELECT key, label_ru, label_en, description_ru, category, param_type, unit,
                min_value, max_value, enum_values, aliases, sql_expression,
@@ -109,56 +72,14 @@ export class ParameterDictionaryService {
       `,
     );
 
-    return result.rows.map((row) => {
-      const { createdAt, updatedAt } = formatTimestamps(row);
-
-      return {
-        key: row.key,
-        labelRu: row.label_ru,
-        labelEn: row.label_en,
-        descriptionRu: row.description_ru,
-        category: row.category,
-        paramType: row.param_type,
-        unit: row.unit,
-        minValue: row.min_value,
-        maxValue: row.max_value,
-        enumValues: Array.isArray(row.enum_values) ? row.enum_values : null,
-        aliases: Array.isArray(row.aliases) ? row.aliases : null,
-        sqlExpression: row.sql_expression,
-        isSearchable: row.is_searchable,
-        isFilterable: row.is_filterable,
-        priority: row.priority,
-        version: row.version,
-        createdAt,
-        updatedAt,
-      };
-    });
+    return result.rows.map(rowToParameterDictionary);
   }
 
   /**
    * Получить параметр словаря по ключу
    */
   async getByKey(key: string): Promise<ParameterDictionary> {
-    const result = await this.fastify.db.query<{
-      key: string;
-      label_ru: string;
-      label_en: string | null;
-      description_ru: string | null;
-      category: string;
-      param_type: string;
-      unit: string | null;
-      min_value: number | null;
-      max_value: number | null;
-      enum_values: any;
-      aliases: any;
-      sql_expression: string;
-      is_searchable: boolean | null;
-      is_filterable: boolean | null;
-      priority: number | null;
-      version: string | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
+    const result = await this.fastify.db.query<ParameterDictionaryRow>(
       `
         SELECT key, label_ru, label_en, description_ru, category, param_type, unit,
                min_value, max_value, enum_values, aliases, sql_expression,
@@ -173,29 +94,7 @@ export class ParameterDictionaryService {
       throw new NotFoundError("Parameter dictionary entry not found");
     }
 
-    const row = result.rows[0]!;
-    const { createdAt, updatedAt } = formatTimestamps(row);
-
-    return {
-      key: row.key,
-      labelRu: row.label_ru,
-      labelEn: row.label_en,
-      descriptionRu: row.description_ru,
-      category: row.category,
-      paramType: row.param_type,
-      unit: row.unit,
-      minValue: row.min_value,
-      maxValue: row.max_value,
-      enumValues: Array.isArray(row.enum_values) ? row.enum_values : null,
-      aliases: Array.isArray(row.aliases) ? row.aliases : null,
-      sqlExpression: row.sql_expression,
-      isSearchable: row.is_searchable,
-      isFilterable: row.is_filterable,
-      priority: row.priority,
-      version: row.version,
-      createdAt,
-      updatedAt,
-    };
+    return rowToParameterDictionary(result.rows[0]);
   }
 
   /**
@@ -227,26 +126,7 @@ export class ParameterDictionaryService {
       throw new ValidationError("Parameter dictionary entry with this key already exists");
     }
 
-    const result = await this.fastify.db.query<{
-      key: string;
-      label_ru: string;
-      label_en: string | null;
-      description_ru: string | null;
-      category: string;
-      param_type: string;
-      unit: string | null;
-      min_value: number | null;
-      max_value: number | null;
-      enum_values: any;
-      aliases: any;
-      sql_expression: string;
-      is_searchable: boolean | null;
-      is_filterable: boolean | null;
-      priority: number | null;
-      version: string | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
+    const result = await this.fastify.db.query<ParameterDictionaryRow>(
       `
         INSERT INTO parameter_dictionary (
           key, label_ru, label_en, description_ru, category, param_type, unit,
@@ -278,29 +158,7 @@ export class ParameterDictionaryService {
       ],
     );
 
-    const row = result.rows[0]!;
-    const { createdAt, updatedAt } = formatTimestamps(row);
-
-    return {
-      key: row.key,
-      labelRu: row.label_ru,
-      labelEn: row.label_en,
-      descriptionRu: row.description_ru,
-      category: row.category,
-      paramType: row.param_type,
-      unit: row.unit,
-      minValue: row.min_value,
-      maxValue: row.max_value,
-      enumValues: Array.isArray(row.enum_values) ? row.enum_values : null,
-      aliases: Array.isArray(row.aliases) ? row.aliases : null,
-      sqlExpression: row.sql_expression,
-      isSearchable: row.is_searchable,
-      isFilterable: row.is_filterable,
-      priority: row.priority,
-      version: row.version,
-      createdAt,
-      updatedAt,
-    };
+    return rowToParameterDictionary(result.rows[0]);
   }
 
   /**
@@ -340,50 +198,9 @@ export class ParameterDictionaryService {
 
     const { sql, values } = builder.build('parameter_dictionary', 'key', key);
 
-    const result = await this.fastify.db.query<{
-      key: string;
-      label_ru: string;
-      label_en: string | null;
-      description_ru: string | null;
-      category: string;
-      param_type: string;
-      unit: string | null;
-      min_value: number | null;
-      max_value: number | null;
-      enum_values: any;
-      aliases: any;
-      sql_expression: string;
-      is_searchable: boolean | null;
-      is_filterable: boolean | null;
-      priority: number | null;
-      version: string | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(sql, values);
+    const result = await this.fastify.db.query<ParameterDictionaryRow>(sql, values);
 
-    const row = result.rows[0]!;
-    const { createdAt, updatedAt } = formatTimestamps(row);
-
-    return {
-      key: row.key,
-      labelRu: row.label_ru,
-      labelEn: row.label_en,
-      descriptionRu: row.description_ru,
-      category: row.category,
-      paramType: row.param_type,
-      unit: row.unit,
-      minValue: row.min_value,
-      maxValue: row.max_value,
-      enumValues: Array.isArray(row.enum_values) ? row.enum_values : null,
-      aliases: Array.isArray(row.aliases) ? row.aliases : null,
-      sqlExpression: row.sql_expression,
-      isSearchable: row.is_searchable,
-      isFilterable: row.is_filterable,
-      priority: row.priority,
-      version: row.version,
-      createdAt,
-      updatedAt,
-    };
+    return rowToParameterDictionary(result.rows[0]);
   }
 
   /**
