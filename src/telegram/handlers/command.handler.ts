@@ -3,6 +3,7 @@ import { SessionService } from '../services/session.service';
 import { buildMainMenuKeyboard } from '../keyboards';
 import { deletePreviousMessages, sendAndTrack } from '../utils/message.utils';
 import { refreshParamsConfig } from '../view.format';
+import { version as appVersion } from '../../../package.json';
 
 export function setupCommandHandlers(
   bot: Telegraf,
@@ -22,6 +23,8 @@ export function setupCommandHandlers(
     // Создаем новую сессию
     await sessionService.reset(telegramId);
 
+    const versionSuffix = `\n\nВерсия: ${appVersion}`;
+
     await sendAndTrack(
       ctx, 
       sessionService['sessions'],
@@ -29,7 +32,8 @@ export function setupCommandHandlers(
       "🔍 **Напишите, что ищете**, например:\n" +
       "• «Мне нужен кран грузоподъемностью 50 тонн»\n" +
       "• «Экскаватор Caterpillar»\n\n" +
-      "Или нажмите кнопку ниже, чтобы посмотреть категории.",
+      "Или нажмите кнопку ниже, чтобы посмотреть категории." +
+      versionSuffix,
       { parse_mode: "Markdown", ...buildMainMenuKeyboard() }
     );
   });

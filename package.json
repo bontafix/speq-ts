@@ -30,6 +30,7 @@
     "analyze:parameters": "ts-node src/scripts/analyze-parameters.ts",
     "generate:dictionary": "ts-node src/scripts/generate-dictionary.ts",
     "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",
+    "print:category-params": "ts-node src/scripts/print-category-parameters.ts",
     "resize:images": "ts-node src/scripts/resize-images.ts",
     "webhook:set": "ts-node src/scripts/webhook.ts set",
     "webhook:delete": "ts-node src/scripts/webhook.ts delete",

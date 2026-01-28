@@ -78,7 +78,7 @@ export class ParameterDictionaryService {
 
   /**
    * Получить параметры, доступные для поиска (фильтрации)
-   * @param categoryId - (опционально) ID категории оборудования для уточнения релевантности
+   * (общий список без учета категории)
    * @param limit - макс. кол-во параметров (default 10)
    */
   getSearchableParameters(limit: number = 10): ParameterDictionary[] {
@@ -86,12 +86,52 @@ export class ParameterDictionaryService {
       throw new Error("Справочник не загружен.");
     }
 
-    // Возвращаем параметры с высоким приоритетом (0-29 для основных фильтров)
-    // Сортируем по приоритету (asc)
+    // Возвращаем параметры с высоким приоритетом (0-49 для основных фильтров)
+    // Сортируем по приоритету (desc): чем больше priority, тем важнее
     return this.dictionary
       .filter((p) => (p.priority ?? 100) < 50) // Отсекаем детали и мусор
-      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
       .slice(0, limit);
+  }
+
+  /**
+   * Получить параметры для поиска по конкретной категории
+   *
+   * Используется для подсказок пользователю: какие параметры
+   * имеет смысл уточнять для выбранной категории техники.
+   *
+   * Правила:
+   * - фильтруем по точному совпадению category (case-insensitive)
+   * - учитываем только "важные" параметры (priority < 50)
+   * - если по категории ничего не нашли, возвращаем общий список,
+   *   чтобы не оставлять пользователя без подсказок
+   *
+   * @param category - значение поля category из словаря (каноническое имя категории)
+   * @param limit - макс. кол-во параметров (default 10)
+   */
+  getSearchableParametersByCategory(category: string, limit: number = 10): ParameterDictionary[] {
+    if (!this.dictionaryLoaded) {
+      throw new Error("Справочник не загружен.");
+    }
+
+    const normalizedCategory = category.trim().toLowerCase();
+    if (!normalizedCategory) {
+      return this.getSearchableParameters(limit);
+    }
+
+    const byCategory = this.dictionary
+      .filter((p) => (p.priority ?? 100) < 50)
+      .filter((p) => p.category && p.category.toLowerCase() === normalizedCategory)
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+      .slice(0, limit);
+
+    if (byCategory.length > 0) {
+      return byCategory;
+    }
+
+    // Fallback: если в словаре category не совпало (например, новая категория
+    // или опечатка), возвращаем общий список, чтобы подсказка всё равно была.
+    return this.getSearchableParameters(limit);
   }
 
   /**

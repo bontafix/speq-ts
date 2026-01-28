@@ -11,6 +11,7 @@ import { SessionService } from "./services/session.service";
 import { setupCommandHandlers } from "./handlers/command.handler";
 import { setupTextHandler } from "./handlers/text.handler";
 import { setupCallbackHandlers } from "./handlers/callback.handler";
+import { version as appVersion } from "../../package.json";
 
 function requireBotToken(): string {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
@@ -34,7 +35,7 @@ function requireBotToken(): string {
  */
 export async function setupBot() {
   const apiRoot = process.env.TELEGRAM_API_ROOT?.trim();
-  console.log("[Telegram] Инициализация бота...");
+  console.log(`[Telegram] Инициализация бота... версия=${appVersion}, NODE_ENV=${process.env.NODE_ENV || "development"}`);
   
   // 1. Инициализация AppContainer
   const app = new AppContainer();
