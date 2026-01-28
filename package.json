@@ -32,6 +32,7 @@
     "normalize:parameters": "ts-node src/scripts/normalize-parameters.ts",
     "print:category-params": "ts-node src/scripts/print-category-parameters.ts",
     "resize:images": "ts-node src/scripts/resize-images.ts",
+    "llm:health": "ts-node src/scripts/llm-health.ts",
     "webhook:set": "ts-node src/scripts/webhook.ts set",
     "webhook:delete": "ts-node src/scripts/webhook.ts delete",
     "webhook:info": "ts-node src/scripts/webhook.ts info",

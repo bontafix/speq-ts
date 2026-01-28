@@ -36,6 +36,8 @@ export class LLMProviderFactory {
   private providers: Map<ProviderType, LLMProvider> = new Map();
   private config: ProviderConfig;
   private readonly defaultOllamaChatModel = "qwen2.5:7b-instruct-q4_K_M";
+  private readonly healthCacheTtlMs = 10_000;
+  private lastHealthCheck: { at: number; health: Record<string, boolean> } | null = null;
 
   constructor(config?: Partial<ProviderConfig>) {
     const envChatProvider = process.env.LLM_CHAT_PROVIDER;
@@ -212,6 +214,84 @@ export class LLMProviderFactory {
     throw new Error(
       `Ни один LLM провайдер не доступен. Проверьте подключение к ${preferredType} или fallback провайдерам.`,
     );
+  }
+
+  /**
+   * Выполнить "мягкий" health-check с кэшированием,
+   * чтобы не спамить провайдеры ping-запросами.
+   */
+  private async getCachedHealth(): Promise<Record<string, boolean>> {
+    const now = Date.now();
+    if (this.lastHealthCheck && now - this.lastHealthCheck.at < this.healthCacheTtlMs) {
+      return this.lastHealthCheck.health;
+    }
+
+    const health = await this.checkHealth();
+    this.lastHealthCheck = { at: now, health };
+    return health;
+  }
+
+  /**
+   * Убедиться, что для chat доступен хотя бы один провайдер с учётом fallback.
+   * Бросает подробную ошибку, пригодную для логов при старте бота/сервера.
+   */
+  async ensureChatReady(): Promise<void> {
+    try {
+      await this.getProviderWithFallback(this.config.chatProvider, "chat");
+    } catch (originalError: any) {
+      const health = await this.getCachedHealth().catch(() => ({}));
+      const available = this.getAvailableProviders();
+      const snapshot = this.getConfig();
+
+      const details = [
+        `chatProvider=${snapshot.chatProvider}`,
+        `embeddingsProvider=${snapshot.embeddingsProvider}`,
+        `fallbackProviders=${(snapshot.fallbackProviders ?? []).join(",") || "—"}`,
+        `availableProviders=${available.join(",") || "—"}`,
+        `health=${JSON.stringify(health)}`,
+      ].join(" | ");
+
+      const message =
+        "LLM chat провайдер недоступен. " +
+        "Проверьте API ключи и переменные LLM_CHAT_PROVIDER, LLM_FALLBACK_PROVIDERS, GROQ_API_KEY, OPENAI_API_KEY, OLLAMA_BASE_URL. " +
+        `Подробности: ${details}. ` +
+        `Исходная ошибка: ${originalError?.message ?? String(originalError)}`;
+
+      const error = new Error(message);
+      (error as any).cause = originalError;
+      throw error;
+    }
+  }
+
+  /**
+   * Убедиться, что для embeddings доступен хотя бы один провайдер с учётом ограничений.
+   */
+  async ensureEmbeddingsReady(): Promise<void> {
+    try {
+      await this.getProviderWithFallback(this.config.embeddingsProvider, "embeddings");
+    } catch (originalError: any) {
+      const health = await this.getCachedHealth().catch(() => ({}));
+      const available = this.getAvailableProviders();
+      const snapshot = this.getConfig();
+
+      const details = [
+        `chatProvider=${snapshot.chatProvider}`,
+        `embeddingsProvider=${snapshot.embeddingsProvider}`,
+        `fallbackProviders=${(snapshot.fallbackProviders ?? []).join(",") || "—"}`,
+        `availableProviders=${available.join(",") || "—"}`,
+        `health=${JSON.stringify(health)}`,
+      ].join(" | ");
+
+      const message =
+        "LLM embeddings провайдер недоступен. " +
+        "Проверьте переменные LLM_EMBEDDINGS_PROVIDER, EMBED_MODEL, а также доступность Ollama/OpenAI. " +
+        `Подробности: ${details}. ` +
+        `Исходная ошибка: ${originalError?.message ?? String(originalError)}`;
+
+      const error = new Error(message);
+      (error as any).cause = originalError;
+      throw error;
+    }
   }
 
   /**

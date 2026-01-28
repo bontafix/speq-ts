@@ -35,6 +35,53 @@ export class SearchEngine {
   }
 
   /**
+   * Сформировать человеко-понятную подсказку по параметрам для выбранной категории.
+   *
+   * Используется на уровне диалога: когда понятна категория, но не хватает
+   * параметров, мы можем показать пользователю, какие характеристики
+   * обычно используются для фильтрации этой техники.
+   *
+   * Пример результата:
+   *  "Для категории «Кран» основные параметры: грузоподъемность (т),
+   *   высота подъёма (м), вылет стрелы (м), тип крана, регион, бренд."
+   */
+  getCategoryParametersHint(category: string, limit: number = 10): string | null {
+    if (!this.dictionaryService) {
+      return null;
+    }
+
+    const trimmed = category.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      const params = this.dictionaryService.getSearchableParametersByCategory(trimmed, limit);
+      if (!params.length) {
+        return null;
+      }
+
+      const parts = params.map((p) => {
+        const name = p.labelRu || p.key;
+        const unit = p.unit ? ` (${p.unit})` : "";
+        return `${name}${unit}`;
+      });
+
+      const uniqueParts = Array.from(new Set(parts));
+      const list = uniqueParts.join(", ");
+
+      return `Для категории «${trimmed}» основные параметры для подбора: ${list}. ` +
+        `Спросите пользователя, какие из них для него важны (можно несколько).`;
+    } catch (error) {
+      if (process.env.DEBUG || process.env.DEBUG_SEARCH) {
+        // eslint-disable-next-line no-console
+        console.warn("[SearchEngine] Failed to build category parameters hint:", error);
+      }
+      return null;
+    }
+  }
+
+  /**
    * Асинхронная инициализация словаря параметров.
    * Вызывается один раз при создании SearchEngine.
    */

@@ -40,6 +40,14 @@ export class CatalogService {
   }
 
   /**
+   * Получить текстовую подсказку по параметрам для указанной категории.
+   * Обертка над SearchEngine, чтобы UI-слои не зависели напрямую от него.
+   */
+  getCategoryParametersHint(category: string, limit: number = 10): string | null {
+    return this.searchEngine.getCategoryParametersHint(category, limit);
+  }
+
+  /**
    * Утилита для краткого представления оборудования (для CLI / UI слоёв).
    */
   formatSummary(item: EquipmentSummary): string {

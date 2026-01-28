@@ -43,6 +43,38 @@ export async function setupBot() {
   await app.init();
   console.log("[Telegram] AppContainer готов.");
 
+  // 1.1 Проверяем доступность LLM-провайдера для диалога ещё до запуска бота
+  try {
+    console.log("[Telegram][LLM] Проверка доступности chat провайдера...");
+    await app.llmFactory.ensureChatReady();
+    const llmConfig = app.llmFactory.getConfig();
+    const health = await app.llmFactory.checkHealth();
+    const providersStatus = ["groq", "openai", "ollama"]
+      .map((name) => {
+        const status = health[name] === undefined ? "-" : health[name] ? "ok" : "fail";
+        return `${name}:${status}`;
+      })
+      .join(", ");
+
+    console.log(
+      `[Telegram][LLM] Chat провайдер готов. ` +
+        `chat=${llmConfig.chatProvider}, embed=${llmConfig.embeddingsProvider}, ` +
+        `fallbacks=${(llmConfig.fallbackProviders ?? []).join(",") || "-"}, ` +
+        `providers=[${providersStatus}]`,
+    );
+  } catch (e: any) {
+    console.error("[Telegram][LLM] Ошибка инициализации LLM chat провайдера:", e?.message);
+    if (process.env.TELEGRAM_STRICT_LLM_STARTUP === "true") {
+      // В строгом режиме падаем сразу, чтобы не получать ошибки уже во время диалога.
+      throw e;
+    } else {
+      console.error(
+        "[Telegram][LLM] Продолжаем запуск бота без гарантии работоспособности LLM. " +
+          "Рекомендуется запустить `npm run llm:health` и проверить конфигурацию.",
+      );
+    }
+  }
+
   // 2. Инициализация CatalogIndexService для категорий
   const catalogIndex = new CatalogIndexService();
   await catalogIndex.ensureIndex();

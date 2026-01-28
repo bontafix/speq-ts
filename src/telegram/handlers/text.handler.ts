@@ -43,14 +43,26 @@ export function setupTextHandler(
     try {
       await ctx.sendChatAction("typing");
 
-      // 1. Создаем билдер с восстановленной историей
+      // 1. Готовим дополнительные system-подсказки для LLM
+      // Если в сессии уже известна категория, подмешиваем подсказку
+      // с перечнем ключевых параметров для этой категории.
+      let extraSystemMessages: string[] | undefined;
+      if (session.categoryName) {
+        const hint = catalogService.getCategoryParametersHint(session.categoryName, 10);
+        if (hint) {
+          extraSystemMessages = [hint];
+        }
+      }
+
+      // 2. Создаем билдер с восстановленной историей и доп. подсказками
       const builder = new InteractiveQueryBuilder(llmFactory, {
         model: config.llm.model,
         maxTurns: config.llm.dialogMaxTurns,
-        history: session.chatHistory ?? []
+        history: session.chatHistory ?? [],
+        extraSystemMessages,
       });
 
-      // 2. Получаем следующий шаг
+      // 3. Получаем следующий шаг
       const step = await builder.next(text);
 
       // Сохраняем обновленную историю
@@ -65,6 +77,12 @@ export function setupTextHandler(
         await deletePreviousMessages(ctx, sessionService['sessions']);
         
         console.log(`[Telegram] SearchQuery: ${JSON.stringify(step.query, null, 2)}`);
+
+        // Обновляем категорию в сессии для будущих подсказок по параметрам
+        if (step.query.category && typeof step.query.category === "string") {
+          session.categoryName = step.query.category;
+          await sessionService.update(session);
+        }
         
         // 3. Ищем
         const result = await catalogService.searchEquipment(step.query);

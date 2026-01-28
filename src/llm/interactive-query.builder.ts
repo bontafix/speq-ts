@@ -103,6 +103,11 @@ export interface InteractiveQueryBuilderOptions {
   model: string;
   maxTurns?: number;
   history?: ChatMessage[] | undefined;
+  /**
+   * Дополнительные system-сообщения, которые можно подмешать к базовому промпту.
+   * Например, подсказки по параметрам для выбранной категории.
+   */
+  extraSystemMessages?: string[] | undefined;
 }
 
 export class InteractiveQueryBuilder {
@@ -199,6 +204,26 @@ export class InteractiveQueryBuilder {
         `.trim(),
         },
       ];
+    }
+
+    // Подмешиваем дополнительные system-сообщения (если переданы),
+    // избегая дублирования идентичных сообщений.
+    if (this.options.extraSystemMessages && this.options.extraSystemMessages.length > 0) {
+      for (const msg of this.options.extraSystemMessages) {
+        const text = msg.trim();
+        if (!text) continue;
+
+        const alreadyExists = this.messages.some(
+          (m) => m.role === "system" && m.content === text,
+        );
+
+        if (!alreadyExists) {
+          this.messages.push({
+            role: "system",
+            content: text,
+          });
+        }
+      }
     }
   }
 
