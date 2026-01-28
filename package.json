@@ -1,6 +1,6 @@
 {
   "name": "speq-ts",
-  "version": "1.0.1",
+  "version": "0.0.21",
   "description": "",
   "main": "dist/cli/index.js",
   "scripts": {
